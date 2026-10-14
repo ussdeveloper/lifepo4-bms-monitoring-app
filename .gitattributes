@@ -1,0 +1,12 @@
+# Shell scripts must keep Unix line endings, otherwise the shebang breaks in
+# WSL/Linux (the classic "env: 'bash\r': No such file or directory").
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.go text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.csv text eol=lf

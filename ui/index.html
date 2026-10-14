@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiFePO4 BMS Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;200;300;400;500&family=Cascadia+Mono:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="scene" aria-hidden="true">
+  <div class="blueprint"></div>
+  <div class="blob blob-a"></div>
+  <div class="blob blob-b"></div>
+  <div class="blob blob-c"></div>
+  <div class="silk"></div>
+</div>
+
+<div class="app">
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar-left">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="title-text">
+        <span class="title-main" data-i18n="app.title">LiFePO4 BMS Monitor</span>
+        <span class="title-sub" data-i18n="app.subtitle">battery panel</span>
+      </div>
+    </div>
+    <div class="titlebar-center">
+      <span class="chip chip-live" id="scan-chip"><span class="dot"></span><span id="scan-text">&nbsp;</span></span>
+      <span class="chip" id="battery-chip">&nbsp;</span>
+    </div>
+    <div class="titlebar-buttons">
+      <button class="icon-button" id="settings-toggle" type="button" data-i18n-title="settings.open" title="Settings">
+        <!-- Lucide "settings" (stroke 0.75) -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="lang-button" id="lang-toggle" type="button" data-i18n-title="lang.switch" title="Switch language">
+        <!-- Lucide "languages" (stroke 0.75) -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m5 8 6 6"/>
+          <path d="m4 14 6-6 2-3"/>
+          <path d="M2 5h12"/>
+          <path d="M7 2h1"/>
+          <path d="m22 22-5-10-5 10"/>
+          <path d="M14 18h6"/>
+        </svg>
+        <span id="lang-label">PL</span>
+      </button>
+      <span class="button-sep" aria-hidden="true"></span>
+      <button class="win-button" data-action="minimize" data-i18n-title="window.minimize" title="Minimize" aria-label="Minimize">
+        <!-- Lucide "minus" -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="win-button" data-action="maximize" data-i18n-title="window.maximize" title="Maximize / restore" aria-label="Maximize">
+        <!-- Lucide "square" -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      </button>
+      <button class="win-button win-close" data-action="close" data-i18n-title="window.close" title="Close" aria-label="Close">
+        <!-- Lucide "x" -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid-panel">
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="grid.title">Detected batteries</h2>
+          <span class="muted" id="refresh-note">&nbsp;</span>
+          <span class="summary" id="scan-summary">&nbsp;</span>
+        </div>
+        <button class="pill" id="deepscan" data-i18n="grid.deepscan">Check every device</button>
+      </div>
+      <div class="cards-scroll">
+        <div class="cards" id="cards"></div>
+        <div class="empty glass" id="empty">
+          <div class="radar"><span></span></div>
+          <h3 data-i18n="empty.title">Looking for batteries…</h3>
+          <p data-i18n="empty.hint">If the BMS is asleep, press the wake-up button on the battery — it will show up here automatically.</p>
+          <div class="checking-list" id="checking"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="detail glass" id="detail">
+      <div class="detail-head">
+        <div>
+          <div class="eyebrow" id="detail-eyebrow" data-i18n="detail.eyebrow">Details</div>
+          <h2 id="detail-name" data-i18n="detail.selectPrompt">Select a battery</h2>
+          <div class="muted mono" id="detail-addr">&nbsp;</div>
+        </div>
+        <div class="detail-chips">
+          <span class="chip" id="detail-brand" hidden></span>
+          <span class="chip" id="detail-proto" hidden></span>
+        </div>
+      </div>
+
+      <div class="detail-body" id="detail-placeholder">
+        <p data-i18n="detail.hoverHint">Hover a battery on the left. Data is read from its BMS every few seconds.</p>
+      </div>
+
+      <div class="detail-body" id="detail-content" hidden>
+        <div class="hero-metrics">
+          <div class="ring-wrap">
+            <svg viewBox="0 0 120 120" class="ring">
+              <defs>
+                <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#00c2c2"/>
+                  <stop offset="100%" stop-color="#8a6fe6"/>
+                </linearGradient>
+              </defs>
+              <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-value" id="ring-value" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="ring-label">
+              <span id="soc-value">–</span>
+              <small data-i18n="metric.soc.short">state of charge</small>
+            </div>
+          </div>
+          <div class="hero-side">
+            <div class="metric">
+              <span class="metric-label" data-i18n="metric.voltage">Voltage</span>
+              <span class="metric-value" id="m-voltage">–</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" data-i18n="metric.current">Current</span>
+              <span class="metric-value" id="m-current">–</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" data-i18n="metric.soh">State of health</span>
+              <span class="metric-value" id="m-soh">–</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cycle">
+          <div class="cycle-bar"><span id="cycle-fill"></span></div>
+          <span class="muted" id="updated-text">&nbsp;</span>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric">
+            <span class="metric-label" data-i18n="metric.remaining">Remaining</span>
+            <span class="metric-value" id="m-remaining">–</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label" data-i18n="metric.design">Design capacity</span>
+            <span class="metric-value" id="m-design">–</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label" data-i18n="metric.cycles">Cycles</span>
+            <span class="metric-value" id="m-cycles">–</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label" data-i18n="metric.model">Model</span>
+            <span class="metric-value small" id="m-model">–</span>
+          </div>
+        </div>
+
+        <div class="flags" id="flags"></div>
+
+        <div class="block">
+          <div class="block-head">
+            <span class="metric-label" data-i18n="metric.cells">Cells</span>
+            <span class="muted" id="cells-summary"></span>
+          </div>
+          <div class="cells" id="cells"></div>
+        </div>
+
+        <div class="block">
+          <div class="block-head">
+            <span class="metric-label" data-i18n="metric.temperatures">Temperatures</span>
+          </div>
+          <div class="temps" id="temps"></div>
+        </div>
+
+        <div class="history" id="history-line" hidden></div>
+
+        <div class="error glass" id="detail-error" hidden>
+          <span class="error-headline" id="error-headline"></span>
+          <span class="error-detail mono" id="error-detail"></span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span class="status-item"><span class="status-dot" id="status-dot"></span><span id="status-scan">&nbsp;</span></span>
+    <span class="status-sep"></span>
+    <span class="status-item" id="status-seen">&nbsp;</span>
+    <span class="status-sep"></span>
+    <span class="status-item" id="status-batteries">&nbsp;</span>
+    <span class="status-sep"></span>
+    <span class="status-item" id="status-interval">&nbsp;</span>
+    <span class="status-sep"></span>
+    <span class="status-item" id="status-history" title="">&nbsp;</span>
+    <span class="status-spacer"></span>
+    <span class="status-item" id="status-mqtt" hidden>&nbsp;</span>
+    <span class="status-item" id="status-updated">&nbsp;</span>
+    <span class="status-sep"></span>
+    <span class="status-item mono" id="status-version" title="">&nbsp;</span>
+  </footer>
+</div>
+
+<div class="overlay" id="settings-overlay" hidden>
+  <section class="settings glass" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <header class="settings-head">
+      <div>
+        <div class="eyebrow" data-i18n="settings.eyebrow">Configuration</div>
+        <h2 id="settings-title" data-i18n="settings.title">Settings</h2>
+      </div>
+      <button class="win-button" id="settings-close" type="button" data-i18n-title="settings.close" title="Close">&#x2715;</button>
+    </header>
+
+    <div class="settings-body">
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.interval">Refresh interval</span>
+          <span class="muted" data-i18n="settings.intervalHint">How often the monitored battery is read. The same value drives the CSV history.</span>
+        </div>
+        <div class="setting-control interval-control">
+          <input type="range" id="interval-range" min="2" max="30" step="1" value="5">
+          <input type="number" id="interval-custom" class="number" min="1" max="3600" step="1" value="5">
+          <span class="muted">s</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.api">Read API</span>
+          <span class="muted" data-i18n="settings.apiHint">HTTP endpoint with the last known state of every battery, including batteries that are asleep right now.</span>
+        </div>
+        <div class="setting-control">
+          <label class="switch"><input type="checkbox" id="api-toggle"><span></span></label>
+        </div>
+      </div>
+      <div class="api-hint mono" id="api-hint">&nbsp;</div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.mqtt">MQTT and Home Assistant</span>
+          <span class="muted" data-i18n="settings.mqttHint">Publish readings to a broker and announce every battery to Home Assistant with MQTT discovery.</span>
+        </div>
+        <div class="setting-control">
+          <label class="switch"><input type="checkbox" id="mqtt-enabled"><span></span></label>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <label><span data-i18n="settings.host">Broker host</span><input type="text" id="mqtt-host" placeholder="192.168.1.10"></label>
+        <label><span data-i18n="settings.port">Port</span><input type="number" id="mqtt-port" min="1" max="65535" placeholder="1883"></label>
+        <label><span data-i18n="settings.username">User</span><input type="text" id="mqtt-user" autocomplete="off"></label>
+        <label><span data-i18n="settings.password">Password</span><input type="password" id="mqtt-password" autocomplete="new-password"></label>
+        <label><span data-i18n="settings.prefix">Topic prefix</span><input type="text" id="mqtt-prefix" placeholder="lifepo4bms"></label>
+        <label><span data-i18n="settings.discoveryPrefix">Discovery prefix</span><input type="text" id="mqtt-discovery-prefix" placeholder="homeassistant"></label>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.discovery">Home Assistant discovery</span>
+          <span class="muted" data-i18n="settings.discoveryHint">Each battery becomes one device with sensors for state of charge, voltage, current, cells, temperatures and flags.</span>
+        </div>
+        <div class="setting-control">
+          <label class="switch"><input type="checkbox" id="mqtt-discovery"><span></span></label>
+        </div>
+      </div>
+    </div>
+
+    <footer class="settings-foot">
+      <span class="muted mono" id="settings-path">&nbsp;</span>
+      <span class="status-spacer"></span>
+      <span class="muted" id="settings-state">&nbsp;</span>
+      <button class="pill" id="settings-save" type="button" data-i18n="settings.save">Save</button>
+    </footer>
+  </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

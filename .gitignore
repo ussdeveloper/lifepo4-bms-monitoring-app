@@ -1,0 +1,19 @@
+# Build output, caches and local data
+dist/
+build/
+*.spec
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Logs written next to the executable while developing
+*.log
+
+# Editor and OS noise
+.vscode/*
+!.vscode/tasks.json
+.idea/
+Thumbs.db
+desktop.ini

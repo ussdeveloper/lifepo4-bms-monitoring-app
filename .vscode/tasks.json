@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "LiFePO4 BMS - scan batteries (CLI)",
+			"type": "shell",
+			"command": "& '.venv\\Scripts\\python.exe' 'cli\\humsienk_cli.py' --all --scan-seconds 25",
+			"problemMatcher": []
+		},
+		{
+			"label": "LiFePO4 BMS - run desktop app",
+			"type": "shell",
+			"command": "& 'dist\\lifepo4-bms-monitor.exe'",
+			"problemMatcher": []
+		},
+		{
+			"label": "LiFePO4 BMS - build and test (Go)",
+			"type": "shell",
+			"command": "powershell -ExecutionPolicy Bypass -File scripts\\build-windows.ps1",
+			"problemMatcher": []
+		},
+		{
+			"label": "LiFePO4 BMS - run tests (Go + CLI)",
+			"type": "shell",
+			"command": "go test ./... ; & '.venv\\Scripts\\python.exe' -m pytest cli/tests -q",
+			"problemMatcher": []
+		}
+	]
+}
