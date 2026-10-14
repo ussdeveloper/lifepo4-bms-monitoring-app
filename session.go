@@ -37,6 +37,7 @@ type Session struct {
 	sample   *Sample
 	updated  time.Time
 	cancel   context.CancelFunc
+	power    *powerTrack
 }
 
 // Connection tuning: the battery answers in a few seconds when it is awake, so
@@ -77,6 +78,7 @@ func NewSession(hub *Hub, store *Store, settings *Settings, publisher *mqttPubli
 		settings:  settings,
 		publisher: publisher,
 		status:    sessionIdle,
+		power:     newPowerTrack(),
 	}
 }
 
@@ -130,6 +132,9 @@ func (s *Session) Select(address string, manual bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.mu.Unlock()
+
+	// Fill the power graph with what was recorded in an earlier run.
+	s.power.Seed(address, s.store.RecentPower(address, time.Now().Add(-powerWindow)), time.Now())
 
 	go s.run(ctx, address)
 }
@@ -619,6 +624,10 @@ func (s *Session) setSample(sample *Sample) {
 	protocol := s.protocol
 	s.mu.Unlock()
 
+	if s.power != nil {
+		s.power.Add(address, sample.Timestamp, samplePower(sample))
+	}
+
 	device, _ := s.hub.Device(address)
 	if protocol != "" {
 		device.Protocol = protocol
@@ -658,19 +667,20 @@ func (s *Session) noteProblem(code, message string) {
 
 // SessionState is the JSON snapshot of the monitoring session.
 type SessionState struct {
-	Address     string  `json:"addr"`
-	Status      string  `json:"status"`
-	Error       string  `json:"error"`
-	ErrorCode   string  `json:"errorCode,omitempty"`
-	Brand       string  `json:"brand,omitempty"`
-	Model       string  `json:"model"`
-	Firmware    string  `json:"firmware"`
-	Protocol    string  `json:"protocol"`
-	Samples     int     `json:"samples"`
-	Attempt     int     `json:"attempt"`
-	Auto        bool    `json:"auto"`
-	UpdatedAgoS float64 `json:"updatedAgoS"`
-	Sample      *Sample `json:"sample"`
+	Address     string       `json:"addr"`
+	Status      string       `json:"status"`
+	Error       string       `json:"error"`
+	ErrorCode   string       `json:"errorCode,omitempty"`
+	Brand       string       `json:"brand,omitempty"`
+	Model       string       `json:"model"`
+	Firmware    string       `json:"firmware"`
+	Protocol    string       `json:"protocol"`
+	Samples     int          `json:"samples"`
+	Attempt     int          `json:"attempt"`
+	Auto        bool         `json:"auto"`
+	UpdatedAgoS float64      `json:"updatedAgoS"`
+	Sample      *Sample      `json:"sample"`
+	Power       []powerPoint `json:"power,omitempty"`
 }
 
 func (s *Session) State() SessionState {
@@ -693,5 +703,6 @@ func (s *Session) State() SessionState {
 	if !s.updated.IsZero() {
 		state.UpdatedAgoS = time.Since(s.updated).Seconds()
 	}
+	state.Power = s.power.Points(s.address, time.Now())
 	return state
 }

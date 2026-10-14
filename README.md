@@ -11,6 +11,7 @@ read request.
 ![Battery dashboard](docs/screenshots/dashboard.png)
 
 * Desktop application: Go + WebView2, frameless window with its own title bar, bilingual UI (English / Polish)
+* Detail panel: state of charge, voltage, current, charging power with a graph of the last ten minutes, cells, temperatures and MOSFET state
 * Settings panel: refresh interval, read API, MQTT with Home Assistant discovery
 * Command line tool: Python TUI for quick checks and reports (`cli/`)
 * Battery data and history are stored per user in `%APPDATA%\LiFePO4BMSMonitor`
@@ -167,6 +168,11 @@ so automations keep working with the last known state:
 Other endpoints: `/api/state` (full application state) and `/api/settings`
 (GET or POST a partial settings patch). Add `?addr=<address>` to `/api/batteries`
 to query a single battery.
+
+`/api/state` also carries `session.power`: the readings of the last ten minutes
+(`{ "t": <unix ms>, "w": <watts> }`) that the charging power graph in the panel
+is drawn from. The series is kept in memory while monitoring and seeded from the
+history file after a restart.
 
 ### MQTT and Home Assistant
 

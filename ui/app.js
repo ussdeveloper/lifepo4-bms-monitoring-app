@@ -45,6 +45,10 @@ const STRINGS = {
     "metric.soc.short": "state of charge",
     "metric.voltage": "Voltage",
     "metric.current": "Current",
+    "metric.power": "Power",
+    "metric.powerCharging": "Charging power",
+    "metric.powerDischarging": "Discharging power",
+    "metric.powerWindow": "last 10 minutes",
     "metric.soh": "State of health",
     "metric.remaining": "Remaining",
     "metric.design": "Design capacity",
@@ -105,8 +109,6 @@ const STRINGS = {
     "flags.problems": "problem codes: 0x{code}",
     "cells.summary": "{count} cells · min {min} V · max {max} V · spread {delta} mV",
     "temp.sensor": "sensor {index}: {value} °C",
-    "updated.justNow": "read just now",
-    "updated.next": "read {ago} s ago · next in {next} s",
     "error.noDevice": "The battery is not in range — wake it up and try again.",
     "error.connect": "Could not connect to the battery.",
     "error.notify": "The BMS did not accept notifications.",
@@ -151,6 +153,10 @@ const STRINGS = {
     "metric.soc.short": "naładowanie",
     "metric.voltage": "Napięcie",
     "metric.current": "Prąd",
+    "metric.power": "Moc",
+    "metric.powerCharging": "Moc ładowania",
+    "metric.powerDischarging": "Moc rozładowania",
+    "metric.powerWindow": "ostatnie 10 minut",
     "metric.soh": "Stan zdrowia",
     "metric.remaining": "Pozostało",
     "metric.design": "Pojemność projektowa",
@@ -211,8 +217,6 @@ const STRINGS = {
     "flags.problems": "kody problemów: 0x{code}",
     "cells.summary": "{count} ogniw · min {min} V · max {max} V · różnica {delta} mV",
     "temp.sensor": "czujnik {index}: {value} °C",
-    "updated.justNow": "odczytano przed chwilą",
-    "updated.next": "odczytano {ago} s temu · kolejny za {next} s",
     "error.noDevice": "Akumulator jest poza zasięgiem — wybudź go i spróbuj ponownie.",
     "error.connect": "Nie udało się połączyć z akumulatorem.",
     "error.notify": "BMS nie przyjął powiadomień.",
@@ -247,6 +251,8 @@ const el = {
   statusUpdated: document.getElementById("status-updated"),
   statusVersion: document.getElementById("status-version"),
   cards: document.getElementById("cards"),
+  cardsScroll: document.getElementById("cards-scroll"),
+  checkingCaption: document.getElementById("checking-caption"),
   empty: document.getElementById("empty"),
   checking: document.getElementById("checking"),
   deepscan: document.getElementById("deepscan"),
@@ -292,7 +298,12 @@ const el = {
   mCycles: document.getElementById("m-cycles"),
   mModel: document.getElementById("m-model"),
   cycleFill: document.getElementById("cycle-fill"),
-  updatedText: document.getElementById("updated-text"),
+  powerMetric: document.getElementById("power-metric"),
+  powerLabel: document.getElementById("power-label"),
+  mPower: document.getElementById("m-power"),
+  powerLine: document.getElementById("power-line"),
+  powerArea: document.getElementById("power-area"),
+  powerDot: document.getElementById("power-dot"),
   flags: document.getElementById("flags"),
   cells: document.getElementById("cells"),
   cellsSummary: document.getElementById("cells-summary"),
@@ -660,6 +671,7 @@ function renderCards() {
   }
 
   el.empty.hidden = batteries.length > 0;
+  el.cardsScroll.hidden = batteries.length === 0;
   el.cards.hidden = batteries.length === 0;
 }
 
@@ -691,7 +703,8 @@ function chooseDevice(address) {
 function renderChecking() {
   const devices = state.hub.devices || [];
   if (!devices.length) {
-    el.checking.innerHTML = `<span class="device-caption">${escapeHtml(t("empty.noDevices"))}</span>`;
+    el.checkingCaption.textContent = t("empty.noDevices");
+    el.checking.innerHTML = "";
     return;
   }
   const rows = devices
@@ -706,8 +719,8 @@ function renderChecking() {
       </div>`;
     })
     .join("");
-  el.checking.innerHTML =
-    `<span class="device-caption">${escapeHtml(t("empty.inRange", { n: devices.length }))}</span>${rows}`;
+  el.checkingCaption.textContent = t("empty.inRange", { n: devices.length });
+  el.checking.innerHTML = rows;
 }
 
 // deviceStateClass maps a scanner status to a colour hint in the device list.
@@ -802,12 +815,8 @@ function renderDetail() {
 
   const interval = Number(state.config.intervalS) || 5;
   el.cycleFill.style.width = `${Math.min(100, (lastUpdatedAgo / interval) * 100)}%`;
-  el.updatedText.textContent = lastUpdatedAgo < 1.5
-    ? t("updated.justNow")
-    : t("updated.next", {
-        ago: Math.round(lastUpdatedAgo),
-        next: Math.max(0, Math.round(interval - lastUpdatedAgo)),
-      });
+
+  renderPower(session, sample);
 
   const samples = Number(session.samples) || 0;
   if (samples > 0) {
@@ -821,6 +830,75 @@ function renderDetail() {
   renderFlags(sample);
   renderCells(sample);
   renderTemps(sample);
+}
+
+/* --- charging power graph (last ten minutes) --- */
+
+const POWER_WINDOW_MS = 10 * 60 * 1000;
+
+// renderPower shows how much power is going in or out of the battery, with a
+// small graph of the last ten minutes.
+function renderPower(session, sample) {
+  const current = Number(sample.currentA) || 0;
+  const watts = (Number(sample.voltageV) || 0) * current;
+  const charging = current > 0.05;
+  const discharging = current < -0.05;
+
+  el.powerMetric.classList.toggle("charging", charging);
+  el.powerMetric.classList.toggle("discharging", discharging);
+  el.powerLabel.textContent = charging
+    ? t("metric.powerCharging")
+    : discharging ? t("metric.powerDischarging") : t("metric.power");
+  el.mPower.textContent = charging || discharging
+    ? `${charging ? "+" : "−"}${fixed(Math.abs(watts), 0)} W`
+    : `${fixed(watts, 0)} W`;
+
+  const spark = buildSpark((session && session.power) || []);
+  el.powerLine.setAttribute("d", spark.line);
+  el.powerArea.setAttribute("d", spark.area);
+  el.powerDot.setAttribute("cx", spark.dot ? spark.dot[0].toFixed(2) : "-10");
+  el.powerDot.setAttribute("cy", spark.dot ? spark.dot[1].toFixed(2) : "-10");
+}
+
+// buildSpark converts readings into a path for the 120x34 sparkline. The window
+// is always ten minutes wide, so the line only starts at the left edge once the
+// readings reach that far back.
+function buildSpark(points) {
+  const viewWidth = 120;
+  const viewHeight = 34;
+  const padding = 3;
+  const stamp = Date.now();
+  const newest = points.length ? points[points.length - 1].t : stamp;
+  const end = Math.max(stamp, newest);
+  const start = end - POWER_WINDOW_MS;
+  const visible = points.filter((point) => point.t >= start && point.t <= end);
+  if (!visible.length) {
+    return { line: "", area: "", dot: null };
+  }
+
+  const values = visible.map((point) => Number(point.w) || 0);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const middle = (low + high) / 2;
+  // Keep a minimum vertical range so a steady reading does not look dramatic.
+  const span = Math.max(high - low, Math.max(Math.abs(high), 1) * 0.08, 1);
+  const top = middle + span / 2;
+  const bottom = middle - span / 2;
+  const positionX = (value) => ((value - start) / POWER_WINDOW_MS) * viewWidth;
+  const positionY = (value) => padding + (1 - (value - bottom) / (top - bottom)) * (viewHeight - padding * 2);
+
+  const coords = visible.map((point, index) => [positionX(point.t), positionY(values[index])]);
+  if (coords.length === 1) {
+    // A single reading has no line yet, but the value is already marked.
+    return { line: "", area: "", dot: coords[0] };
+  }
+  const line = coords
+    .map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`)
+    .join(" ");
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const area = `${line} L${last[0].toFixed(2)} ${viewHeight} L${first[0].toFixed(2)} ${viewHeight} Z`;
+  return { line, area, dot: last };
 }
 
 function renderFlags(sample) {

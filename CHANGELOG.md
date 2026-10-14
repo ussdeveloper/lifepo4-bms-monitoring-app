@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capacities, cycles, cells, temperatures, problem codes) and binary sensors
   (charging, discharging, balancing), plus availability reporting.
 * Charging / discharging / idle indicator in the battery list.
+* Charging power in the detail panel: a small graph of the last ten minutes with
+  the current value below it (positive while charging, negative while
+  discharging). The window is filled from the history file after a restart.
+* The list is a scrolling frame: the rounded panel, its elevation and the
+  section head stay in place while only the rows move, and rows fade out at the
+  scroll edges instead of being cut in half.
 * Screenshots in the README and documentation.
 * Unit tests for the settings store and for the MQTT/Home Assistant payloads.
 
@@ -33,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Bluetooth AA:BB:CC:DD:EE:FF`) instead of showing the bare address.
 * Only the list scrolls; it reaches down to the status bar and the inner device
   list no longer adds a second scrollbar.
+* The read countdown is only a progress bar: the text beside it changed on every
+  poll and made the panel jump.
 * The state of charge ring shows the percentage and its caption inside the
   circle instead of overflowing it.
 * Title bar controls share one height and use Lucide icons with a 0.75 stroke in

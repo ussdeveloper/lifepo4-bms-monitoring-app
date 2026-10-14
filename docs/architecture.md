@@ -93,7 +93,7 @@ second and updates the DOM in place (stable hover state, animated bars).
 | `hub.checking` | devices currently queued or being probed |
 | `hub.devices` | every device of the current scan, sorted alphabetically by name (then address) — a stable order, unlike signal strength |
 | `hub.pending`, `hub.rejected`, `hub.identified` | progress counters |
-| `session` | state and last reading of the monitored battery |
+| `session` | state and last reading of the monitored battery, plus `session.power`: the readings of the last ten minutes (unix milliseconds and watts) used by the charging power graph |
 | `config` | version, default language, refresh interval, data directory, platform |
 
 * The window is frameless: `window.go` removes the caption, keeps the resize
@@ -113,6 +113,12 @@ second and updates the DOM in place (stable hover state, animated bars).
 | `settings.json` | refresh interval, read API switch and MQTT configuration |
 | `devices.json` | version, timestamp and one entry per device: address, name, model, brand, protocol, status (`bms`/`notBMS`), RSSI, last seen time and the newest reading |
 | `history\<address>.csv` | one row per sample with the columns documented in the README |
+
+The history file is also read back: `Store.RecentPower` parses the tail of the
+file and `Session` seeds the ten minute power graph with it, so the graph shows a
+full window right after a start. In memory the readings are kept in a rolling
+per-address window (`history.go`), so the interface never scans the file while
+it polls.
 
 Writes are atomic (temporary file + rename) and the store degrades gracefully:
 if the directory is not writable the application keeps running with persistence

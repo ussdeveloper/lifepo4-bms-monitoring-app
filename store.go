@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -374,6 +375,66 @@ func (s *Store) SampleCount(address string) int {
 		count-- // header row
 	}
 	return count
+}
+
+// powerTailBytes limits how much of a history file is parsed for the graph; the
+// last window only ever needs the last few hundred rows.
+const powerTailBytes = 256 << 10
+
+// RecentPower reads the tail of history/<address>.csv and returns the readings
+// that are newer than since, so the panel graph is filled right after a start.
+func (s *Store) RecentPower(address string, since time.Time) []powerPoint {
+	if !s.Enabled() || strings.TrimSpace(address) == "" {
+		return nil
+	}
+	s.mu.Lock()
+	file, err := os.Open(filepath.Join(s.history, historyFileName(address)+".csv"))
+	s.mu.Unlock()
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	if stat, err := file.Stat(); err == nil && stat.Size() > powerTailBytes {
+		if _, err := file.Seek(stat.Size()-powerTailBytes, io.SeekStart); err != nil {
+			return nil
+		}
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil
+	}
+	text := string(data)
+	if index := strings.IndexByte(text, '\n'); index >= 0 {
+		text = text[index+1:] // the first line may be cut in half
+	}
+
+	reader := csv.NewReader(strings.NewReader(text))
+	reader.FieldsPerRecord = -1
+	points := make([]powerPoint, 0, 128)
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) < 7 { // timestamp, ..., voltage, current
+			continue
+		}
+		stamp, err := time.Parse(time.RFC3339, record[0])
+		if err != nil || stamp.Before(since) {
+			continue
+		}
+		volts, err := strconv.ParseFloat(record[5], 64)
+		if err != nil {
+			continue
+		}
+		amps, err := strconv.ParseFloat(record[6], 64)
+		if err != nil {
+			continue
+		}
+		points = append(points, powerPoint{At: stamp.UnixMilli(), Watts: volts * amps})
+	}
+	return points
 }
 
 func (s *Store) flushLocked() {

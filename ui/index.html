@@ -77,12 +77,15 @@
         </div>
         <button class="pill" id="deepscan" data-i18n="grid.deepscan">Check every device</button>
       </div>
-      <div class="cards-scroll">
-        <div class="cards" id="cards"></div>
+      <div class="list-area">
+        <div class="cards-scroll" id="cards-scroll">
+          <div class="cards" id="cards"></div>
+        </div>
         <div class="empty glass" id="empty">
           <div class="radar"><span></span></div>
           <h3 data-i18n="empty.title">Looking for batteries…</h3>
           <p data-i18n="empty.hint">If the BMS is asleep, press the wake-up button on the battery — it will show up here automatically.</p>
+          <span class="device-caption" id="checking-caption"></span>
           <div class="checking-list" id="checking"></div>
         </div>
       </div>
@@ -137,11 +140,32 @@
               <span class="metric-value" id="m-soh">–</span>
             </div>
           </div>
+          <div class="hero-power">
+            <div class="metric power-metric" id="power-metric">
+              <span class="metric-label">
+                <!-- Lucide "line-chart" -->
+                <svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                <span id="power-label">Power</span>
+              </span>
+              <svg class="spark" id="power-spark" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="sparkGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="rgba(0, 194, 194, 0.32)"/>
+                    <stop offset="100%" stop-color="rgba(0, 194, 194, 0)"/>
+                  </linearGradient>
+                </defs>
+                <path class="spark-area" id="power-area" d=""></path>
+                <path class="spark-line" id="power-line" d=""></path>
+                <circle class="spark-dot" id="power-dot" cx="-10" cy="-10" r="2.2"></circle>
+              </svg>
+              <span class="metric-value" id="m-power">–</span>
+              <span class="metric-note" data-i18n="metric.powerWindow">last 10 minutes</span>
+            </div>
+          </div>
         </div>
 
         <div class="cycle">
           <div class="cycle-bar"><span id="cycle-fill"></span></div>
-          <span class="muted" id="updated-text">&nbsp;</span>
         </div>
 
         <div class="metric-grid">
