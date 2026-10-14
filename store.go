@@ -39,11 +39,16 @@ type storeDevice struct {
 	Model      string  `json:"model,omitempty"`
 	Brand      string  `json:"brand,omitempty"`
 	Protocol   string  `json:"protocol,omitempty"`
-	Status     string  `json:"status"` // "bms" or "notBMS"
+	Status     string  `json:"status"` // "bms", "notBMS" or "watched"
+	Manual     bool    `json:"manual,omitempty"`
 	RSSI       int     `json:"rssi,omitempty"`
 	SeenAt     string  `json:"lastSeen,omitempty"`
 	LastSample *Sample `json:"lastSample,omitempty"`
 }
+
+// watchedStatus marks an address the user added by hand: it is listed and
+// probed on every start even before the device ever advertised.
+const watchedStatus = "watched"
 
 // storeFile is the on-disk layout of devices.json.
 type storeFile struct {
@@ -129,7 +134,7 @@ func (s *Store) Known() []storeDevice {
 	defer s.mu.Unlock()
 	known := make([]storeDevice, 0, len(s.devices))
 	for _, device := range s.devices {
-		if device.Status == "bms" {
+		if device.Status == "bms" || (device.Status == watchedStatus && device.Manual) {
 			known = append(known, device)
 		}
 	}
@@ -267,13 +272,92 @@ func (s *Store) SaveNotBMS(address, name string) {
 	if entry, ok := s.devices[key]; ok && entry.Status == "bms" {
 		return
 	}
+	manual := false
+	name = strings.TrimSpace(name)
+	if entry, ok := s.devices[key]; ok {
+		// An address added by hand keeps that flag and its name, so it stays on
+		// the list until the user removes it.
+		manual = entry.Manual
+		if name == "" {
+			name = entry.Name
+		}
+	}
 	s.devices[key] = storeDevice{
 		Address: address,
 		Name:    name,
 		Status:  "notBMS",
+		Manual:  manual,
 		SeenAt:  time.Now().Format(time.RFC3339),
 	}
 	s.flushLocked()
+}
+
+// SaveWatched remembers an address the user added by hand, so it is listed and
+// probed on every start — even when the device never advertises.
+func (s *Store) SaveWatched(address, name string) {
+	if !s.Enabled() || strings.TrimSpace(address) == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := strings.ToUpper(address)
+	entry := s.devices[key]
+	if entry.Status == "bms" {
+		// Already identified as a battery: only the manual flag is new.
+		entry.Manual = true
+		if name != "" && entry.Name == "" {
+			entry.Name = name
+		}
+		s.devices[key] = entry
+		s.flushLocked()
+		return
+	}
+	entry.Address = address
+	entry.Status = watchedStatus
+	entry.Manual = true
+	if name != "" {
+		entry.Name = name
+	}
+	s.devices[key] = entry
+	s.flushLocked()
+}
+
+// RemoveWatched drops a hand added address again.
+func (s *Store) RemoveWatched(address string) {
+	if !s.Enabled() {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := strings.ToUpper(address)
+	entry, ok := s.devices[key]
+	if !ok || !entry.Manual {
+		return
+	}
+	if entry.Status == "bms" {
+		// A real battery stays remembered, it just loses the manual flag.
+		entry.Manual = false
+		s.devices[key] = entry
+	} else {
+		delete(s.devices, key)
+	}
+	s.flushLocked()
+}
+
+// Watched returns the addresses the user added by hand.
+func (s *Store) Watched() []storeDevice {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	watched := make([]storeDevice, 0, len(s.devices))
+	for _, device := range s.devices {
+		if device.Manual {
+			watched = append(watched, device)
+		}
+	}
+	return watched
 }
 
 // ForgetNotBMS drops cached rejections so a deep scan probes them again.
@@ -432,7 +516,8 @@ func (s *Store) RecentPower(address string, since time.Time) []powerPoint {
 		if err != nil {
 			continue
 		}
-		points = append(points, powerPoint{At: stamp.UnixMilli(), Watts: volts * amps})
+		soc, _ := strconv.Atoi(record[7])
+		points = append(points, powerPoint{At: stamp.UnixMilli(), Watts: volts * amps, Soc: soc})
 	}
 	return points
 }

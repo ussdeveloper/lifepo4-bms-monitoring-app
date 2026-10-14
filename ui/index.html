@@ -32,11 +32,19 @@
       <span class="chip" id="battery-chip">&nbsp;</span>
     </div>
     <div class="titlebar-buttons">
-      <button class="icon-button" id="settings-toggle" type="button" data-i18n-title="settings.open" title="Settings">
-        <!-- Lucide "settings" (stroke 0.75) -->
+      <button class="icon-button" id="settings-toggle" type="button" data-i18n-title="settings.open" title="Settings">        <!-- Lucide "settings" (stroke 0.75) -->
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
           <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="icon-button" id="release-button" type="button" data-i18n-title="release.button" title="Release the battery for other devices">
+        <!-- Lucide "unplug" -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m19 5 3-3"/><path d="m2 22 3-3"/>
+          <path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/>
+          <path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/>
+          <path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/>
         </svg>
       </button>
       <button class="lang-button" id="lang-toggle" type="button" data-i18n-title="lang.switch" title="Switch language">
@@ -70,21 +78,37 @@
   <main>
     <section class="grid-panel">
       <div class="section-head">
-        <div>
-          <h2 data-i18n="grid.title">Detected batteries</h2>
-          <span class="muted" id="refresh-note">&nbsp;</span>
-          <span class="summary" id="scan-summary">&nbsp;</span>
+        <div class="head-left">
+          <div class="tabs" id="panel-tabs" role="tablist">
+            <button class="tab active" id="tab-batteries" type="button" role="tab"
+                    aria-selected="true" aria-controls="cards-scroll">
+              <span data-i18n="tabs.batteries">Batteries</span>
+              <span class="tab-count" id="tab-batteries-count">0</span>
+            </button>
+            <button class="tab" id="tab-devices" type="button" role="tab"
+                    aria-selected="false" aria-controls="devices-scroll">
+              <span data-i18n="tabs.devices">Bluetooth devices</span>
+              <span class="tab-count" id="tab-devices-count">0</span>
+            </button>
+          </div>
+          <div class="head-notes">
+            <span class="muted" id="refresh-note">&nbsp;</span>
+            <span class="summary" id="scan-summary">&nbsp;</span>
+          </div>
         </div>
-        <button class="pill" id="deepscan" data-i18n="grid.deepscan">Check every device</button>
+        <div class="head-actions">
+          <button class="pill pill-small" id="add-device" data-i18n="add.open">+ Add by MAC</button>
+          <button class="pill" id="deepscan" data-i18n="grid.deepscan">Check every device</button>
+        </div>
       </div>
       <div class="list-area">
         <div class="cards-scroll" id="cards-scroll">
+          <p class="list-empty" id="cards-empty" hidden data-i18n="empty.noBatteries">No battery yet — one appears here as soon as the scan finds it.</p>
           <div class="cards" id="cards"></div>
         </div>
-        <div class="empty glass" id="empty">
-          <div class="radar"><span></span></div>
-          <h3 data-i18n="empty.title">Looking for batteries…</h3>
-          <p data-i18n="empty.hint">If the BMS is asleep, press the wake-up button on the battery — it will show up here automatically.</p>
+        <!-- Everything the scan sees, with as much room as the panel has: the
+             radar and the explanations live in the right hand panel. -->
+        <div class="devices-scroll" id="devices-scroll" hidden>
           <span class="device-caption" id="checking-caption"></span>
           <div class="checking-list" id="checking"></div>
         </div>
@@ -102,6 +126,16 @@
           <span class="chip" id="detail-brand" hidden></span>
           <span class="chip" id="detail-proto" hidden></span>
         </div>
+      </div>
+
+      <div class="detail-body detail-scan" id="detail-scan" hidden>
+        <div class="radar"><span></span></div>
+        <h3 data-i18n="empty.title">Looking for batteries…</h3>
+        <p data-i18n="empty.hint">If the BMS is asleep, press the wake-up button on the battery — it will show up here automatically.</p>
+        <p class="empty-note">
+          <span id="scan-stats"></span>
+          <span class="empty-note-line" data-i18n="empty.shareHint">While a phone application or another computer is connected to the battery it stops advertising — close that connection and it shows up here again.</span>
+        </p>
       </div>
 
       <div class="detail-body" id="detail-placeholder">
@@ -160,6 +194,7 @@
               </svg>
               <span class="metric-value" id="m-power">–</span>
               <span class="metric-note" data-i18n="metric.powerWindow">last 10 minutes</span>
+              <span class="metric-eta" id="m-eta" hidden></span>
             </div>
           </div>
         </div>
@@ -232,6 +267,43 @@
   </footer>
 </div>
 
+<div class="overlay" id="add-overlay" hidden>
+  <section class="settings glass add-card" role="dialog" aria-modal="true" aria-labelledby="add-title">
+    <header class="settings-head">
+      <div>
+        <div class="eyebrow" data-i18n="add.eyebrow">Manual entry</div>
+        <h2 id="add-title" data-i18n="add.title">Add a battery by address</h2>
+      </div>
+      <button class="win-button" id="add-close" type="button" data-i18n-title="settings.close" title="Close">&#x2715;</button>
+    </header>
+    <div class="settings-body">
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="add.address">Bluetooth address</span>
+          <span class="muted" data-i18n="add.addressHint">Windows shows it in the device properties, for example AA:BB:CC:11:22:33. The address is used even while the battery does not advertise.</span>
+        </div>
+        <div class="setting-control">
+          <input type="text" id="add-address" class="text mono" spellcheck="false" autocomplete="off" placeholder="AA:BB:CC:11:22:33">
+        </div>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="add.name">Name (optional)</span>
+          <span class="muted" data-i18n="add.nameHint">Shown on the list until the battery reports its own name.</span>
+        </div>
+        <div class="setting-control">
+          <input type="text" id="add-name" class="text" autocomplete="off">
+        </div>
+      </div>
+      <div class="add-list" id="add-list"></div>
+    </div>
+    <footer class="settings-foot">
+      <span class="mono" id="add-state"></span>
+      <button class="pill" id="add-save" data-i18n="add.save">Add</button>
+    </footer>
+  </section>
+</div>
+
 <div class="overlay" id="settings-overlay" hidden>
   <section class="settings glass" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="settings-head">
@@ -252,6 +324,27 @@
           <input type="range" id="interval-range" min="2" max="30" step="1" value="5">
           <input type="number" id="interval-custom" class="number" min="1" max="3600" step="1" value="5">
           <span class="muted">s</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.release">Release time</span>
+          <span class="muted" data-i18n="settings.releaseHint">How long the unplug button hands the battery over to another device, in minutes.</span>
+        </div>
+        <div class="setting-control">
+          <input type="number" id="release-minutes" class="number" min="1" max="120" step="1" value="5">
+          <span class="muted">min</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.radios">Bluetooth radios</span>
+          <span class="muted" id="radios-hint" data-i18n="settings.radiosHint">Windows scans with the default radio. A battery that only another radio sees can be added by its address.</span>
+        </div>
+        <div class="setting-control">
+          <span class="mono" id="radios-value">–</span>
         </div>
       </div>
 

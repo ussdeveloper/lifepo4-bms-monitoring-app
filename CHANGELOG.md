@@ -24,9 +24,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Charging power in the detail panel: a small graph of the last ten minutes with
   the current value below it (positive while charging, negative while
   discharging). The window is filled from the history file after a restart.
+* Estimated time until the battery is full (or empty) next to the power value:
+  coulomb counting at the current is combined with the trend of the state of
+  charge, so a tapering charge is reflected too. Also published to MQTT as
+  `eta_min` and as a Home Assistant sensor.
 * The list is a scrolling frame: the rounded panel, its elevation and the
   section head stay in place while only the rows move, and rows fade out at the
   scroll edges instead of being cut in half.
+* Taking the battery over: when another application (a phone application, a
+  second computer) connects, the BMS drops this connection. The application then
+  reports *another application connected — taking it back*, keeps showing the
+  last reading and keeps retrying until it gets the battery back, instead of
+  holding it hostage or giving up.
+* The right hand panel explains an empty device list (radar, "Looking for
+  batteries…", scan statistics: advertisements, devices, names, scan restarts)
+  while the whole left panel is left to the live device list, so more rows fit.
+* The device list contains only devices the current scan actually sees — the
+  batteries restored from disk are listed above it as batteries, not as devices.
+* The scanner restarts itself after 60 s without a single advertisement and logs
+  every newly seen device, so a computer that finds nothing can be diagnosed
+  from its log file.
+* Releasing the battery on purpose: the *unplug* button in the title bar (and
+  `POST /api/release`) drops the connection so the BMS starts advertising again
+  and a phone or a second computer can find it; the status bar counts the time
+  left and monitoring resumes on its own afterwards. The release time is a
+  setting (five minutes by default) and can also be passed to the API.
+* Two tabs on the left: **Batteries** lists everything that answers (including
+  addresses added by hand), **Bluetooth devices** lists everything the scan sees,
+  each with a count. Before the user picks a tab an empty battery list falls back
+  to the device list.
+* **Add by MAC**: a device can be listed by hand (button next to *Check every
+  device*), which is how a battery reachable only through another Bluetooth radio
+  is monitored. Hand added addresses are remembered, probed with the highest
+  priority and removable in the same dialog.
+* Every Bluetooth radio of the computer is reported (settings panel) and asked
+  which batteries it knows, so a computer with two radios can still reach a
+  battery the default radio does not hear.
+* A device name read over GATT is stored even when the device turns out not to
+  be a battery, so the list shows names instead of bare addresses.
 * Screenshots in the README and documentation.
 * Unit tests for the settings store and for the MQTT/Home Assistant payloads.
 
@@ -41,6 +76,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list no longer adds a second scrollbar.
 * The read countdown is only a progress bar: the text beside it changed on every
   poll and made the panel jump.
+* The window client area covers the whole window (`WM_NCCALCSIZE`), so the
+  interface sits flush against the window edges instead of being inset by the
+  invisible resize border Windows keeps around a frameless window. Resizing is
+  done by the application itself (the web view covers the frame), and the scan
+  chip dot lines up with its label.
 * The state of charge ring shows the percentage and its caption inside the
   circle instead of overflowing it.
 * Title bar controls share one height and use Lucide icons with a 0.75 stroke in

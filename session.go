@@ -38,6 +38,17 @@ type Session struct {
 	updated  time.Time
 	cancel   context.CancelFunc
 	power    *powerTrack
+
+	// connectedAt marks when the current connection was established and is
+	// cleared when it ends; it tells a lost working link apart from a battery
+	// that was never reached.
+	connectedAt time.Time
+	// takeover is set when a working link was taken away by another
+	// application; monitoring keeps retrying while the interface says so.
+	takeover bool
+	// pauseUntil holds monitoring back: the battery is deliberately left free so
+	// that another device (a phone, a second computer) can connect to it.
+	pauseUntil time.Time
 }
 
 // Connection tuning: the battery answers in a few seconds when it is awake, so
@@ -94,11 +105,55 @@ func (s *Session) interval() time.Duration {
 	return value
 }
 
+// Release lets the battery go for the given time: the connection is closed and
+// monitoring stays away, because a BMS stops advertising while it is connected —
+// without this, no other device (a phone, a second computer) could find it.
+func (s *Session) Release(within time.Duration) {
+	if within <= 0 {
+		within = 5 * time.Minute
+	}
+	s.mu.Lock()
+	s.pauseUntil = time.Now().Add(within)
+	cancel := s.cancel
+	s.cancel = nil
+	s.address = ""
+	s.status = sessionIdle
+	s.errMsg = ""
+	s.errCode = ""
+	s.errCode = ""
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	log.Printf("battery released for %s: another device can connect now", within)
+}
+
+// ReleaseLeft reports how long the battery stays released (zero when monitoring
+// is active).
+func (s *Session) ReleaseLeft() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pauseUntil.IsZero() {
+		return 0
+	}
+	left := time.Until(s.pauseUntil)
+	if left <= 0 {
+		s.pauseUntil = time.Time{}
+		return 0
+	}
+	return left
+}
+
+func (s *Session) pauseActive() bool {
+	return s.ReleaseLeft() > 0
+}
+
 // Select switches the session to another device (empty address stops it). The
 // manual flag marks a choice made by the user, which disables automatic
 // monitoring of that address.
 func (s *Session) Select(address string, manual bool) {
 	s.mu.Lock()
+	s.pauseUntil = time.Time{}
 	if s.cancel != nil {
 		s.cancel()
 		s.cancel = nil
@@ -115,6 +170,7 @@ func (s *Session) Select(address string, manual bool) {
 	s.protocol = ""
 	s.samples = 0
 	s.updated = time.Time{}
+	s.takeover = false
 	if address == "" {
 		s.status = sessionIdle
 		s.manual = false
@@ -128,7 +184,9 @@ func (s *Session) Select(address string, manual bool) {
 		s.model = info.Model
 		s.firmware = info.Firmware
 	}
-	s.samples = s.store.SampleCount(address)
+	if s.store != nil {
+		s.samples = s.store.SampleCount(address)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.mu.Unlock()
@@ -156,6 +214,10 @@ func (s *Session) StartAutoSelect(ctx context.Context) {
 }
 
 func (s *Session) autoSelect() {
+	if s.pauseActive() {
+		// The battery was released on purpose: another device is using it.
+		return
+	}
 	battery, ok := s.hub.BestBattery()
 	if !ok {
 		return
@@ -184,6 +246,11 @@ func (s *Session) run(ctx context.Context, address string) {
 	defer runtime.UnlockOSThread()
 
 	attempt := 0
+	// everConnected remembers that this run once had a working link. A later
+	// failure then means the link was taken away (a phone or a second computer
+	// connected to the same battery) instead of the battery simply being asleep.
+	everConnected := false
+	failures := 0
 	for ctx.Err() == nil {
 		attempt++
 		s.setAttempt(attempt)
@@ -192,6 +259,8 @@ func (s *Session) run(ctx context.Context, address string) {
 			// The device is not part of the scan results yet: retry quickly so
 			// the session picks it up as soon as it advertises again.
 			s.fail(ctx, errCodeNoDevice, "device is not part of the scan results")
+			s.noteTakeover(everConnected, failures+1)
+			failures++
 			if !sleepCtx(ctx, s.retryDelay(attempt)) {
 				return
 			}
@@ -202,14 +271,20 @@ func (s *Session) run(ctx context.Context, address string) {
 		})
 		if err != nil {
 			s.fail(ctx, errCodeConnect, "connection failed: "+err.Error())
+			s.noteTakeover(everConnected, failures+1)
+			failures++
 			if !sleepCtx(ctx, s.retryDelay(attempt)) {
 				return
 			}
 			continue
 		}
 		attempt = 0
+		failures = 0
 		s.setAttempt(0)
+		s.markConnected()
+		everConnected = true
 		s.runConnected(ctx, address, device)
+		s.markDisconnected()
 		device.Disconnect()
 		if ctx.Err() != nil {
 			return
@@ -218,6 +293,36 @@ func (s *Session) run(ctx context.Context, address string) {
 			return
 		}
 	}
+}
+
+// takeoverAttempts is how many reconnection attempts are made before a lost
+// link is explained as taken over. A short burst covers a Bluetooth hiccup.
+const takeoverAttempts = 3
+
+// noteTakeover marks that a working link was taken away from this application —
+// in practice a phone application or another computer connected to the same
+// battery, which makes the BMS drop the older connection. Monitoring keeps
+// trying to take the battery back (exactly like the other application does)
+// instead of giving up, and the interface explains what is happening meanwhile.
+func (s *Session) noteTakeover(everConnected bool, failures int) {
+	if !everConnected || failures < takeoverAttempts {
+		return
+	}
+	s.mu.Lock()
+	first := !s.takeover
+	s.takeover = true
+	address := s.address
+	s.mu.Unlock()
+	if first {
+		log.Printf("%s: the link was taken away, trying to take the battery back", address)
+	}
+}
+
+// Takeover reports whether the link was taken by another application.
+func (s *Session) Takeover() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.takeover
 }
 
 // retryDelay shortens the wait after a failed connection: the first attempts
@@ -233,6 +338,19 @@ func (s *Session) retryDelay(attempt int) time.Duration {
 func (s *Session) setAttempt(attempt int) {
 	s.mu.Lock()
 	s.attempt = attempt
+	s.mu.Unlock()
+}
+
+func (s *Session) markConnected() {
+	s.mu.Lock()
+	s.connectedAt = time.Now()
+	s.takeover = false
+	s.mu.Unlock()
+}
+
+func (s *Session) markDisconnected() {
+	s.mu.Lock()
+	s.connectedAt = time.Time{}
 	s.mu.Unlock()
 }
 
@@ -625,7 +743,8 @@ func (s *Session) setSample(sample *Sample) {
 	s.mu.Unlock()
 
 	if s.power != nil {
-		s.power.Add(address, sample.Timestamp, samplePower(sample))
+		s.power.Add(address, sample.Timestamp, samplePower(sample), sample.SoC)
+		sample.EtaS = estimateTimeToEdge(s.power.Points(address, sample.Timestamp), sample)
 	}
 
 	device, _ := s.hub.Device(address)
@@ -681,6 +800,12 @@ type SessionState struct {
 	UpdatedAgoS float64      `json:"updatedAgoS"`
 	Sample      *Sample      `json:"sample"`
 	Power       []powerPoint `json:"power,omitempty"`
+	// Takeover is true while another application holds the battery and this one
+	// is trying to take it back.
+	Takeover bool `json:"takeover,omitempty"`
+	// ReleasedS is the remaining time the battery is deliberately left free for
+	// another device (zero while monitoring is active).
+	ReleasedS float64 `json:"releasedS,omitempty"`
 }
 
 func (s *Session) State() SessionState {
@@ -702,6 +827,10 @@ func (s *Session) State() SessionState {
 	}
 	if !s.updated.IsZero() {
 		state.UpdatedAgoS = time.Since(s.updated).Seconds()
+	}
+	state.Takeover = s.takeover
+	if left := time.Until(s.pauseUntil); !s.pauseUntil.IsZero() && left > 0 {
+		state.ReleasedS = left.Seconds()
 	}
 	state.Power = s.power.Points(s.address, time.Now())
 	return state

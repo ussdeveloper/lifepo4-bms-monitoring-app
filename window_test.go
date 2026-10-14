@@ -128,3 +128,111 @@ func TestDragWithoutCursorIsIgnored(t *testing.T) {
 	}
 	runDrag(env)
 }
+
+/* --- resizing (the web view covers the window edges, so the window is sized
+   from here) --- */
+
+// fakeResize moves the cursor 12 px per frame and releases after four frames.
+type fakeResize struct {
+	cursor     winPoint
+	boundsRect winRect
+	pressed    bool
+	frames     int
+	stepX      int32
+	stepY      int32
+	releaseAt  int
+	rects      []winRect
+}
+
+func (f *fakeResize) environment() resizeEnvironment {
+	if f.stepX == 0 {
+		f.stepX = 12
+	}
+	if f.releaseAt == 0 {
+		f.releaseAt = 4
+	}
+	return resizeEnvironment{
+		buttonDown: func() bool { return f.pressed },
+		cursor:     func() (winPoint, bool) { return f.cursor, true },
+		bounds:     func() (winRect, bool) { return f.boundsRect, true },
+		move: func(left, top, width, height int32) {
+			f.rects = append(f.rects, winRect{left: left, top: top, right: left + width, bottom: top + height})
+		},
+		sleep: func(time.Duration) {
+			f.frames++
+			f.cursor.x += f.stepX
+			f.cursor.y += f.stepY
+			if f.frames >= f.releaseAt {
+				f.pressed = false
+			}
+		},
+	}
+}
+
+func TestResizeRightEdgeKeepsTheLeftEdge(t *testing.T) {
+	fake := &fakeResize{
+		cursor:     winPoint{x: 1920, y: 600},
+		boundsRect: winRect{left: 640, top: 320, right: 1920, bottom: 1120},
+		pressed:    true,
+	}
+	runResize("right", fake.environment())
+
+	if len(fake.rects) < 3 {
+		t.Fatalf("expected several resize steps, got %d", len(fake.rects))
+	}
+	last := fake.rects[len(fake.rects)-1]
+	if last.left != 640 || last.top != 320 {
+		t.Errorf("the left and top edges must not move, got %+v", last)
+	}
+	if last.right != 1920+36 {
+		t.Errorf("the right edge must follow the cursor, got %d", last.right)
+	}
+}
+
+func TestResizeTopLeftEdgeMovesBothEdges(t *testing.T) {
+	fake := &fakeResize{
+		cursor:     winPoint{x: 640, y: 320},
+		boundsRect: winRect{left: 640, top: 320, right: 1920, bottom: 1120},
+		pressed:    true,
+		stepX:      12,
+		stepY:      8,
+	}
+	runResize("topleft", fake.environment())
+
+	last := fake.rects[len(fake.rects)-1]
+	if last.left != 640+36 || last.top != 320+24 {
+		t.Errorf("both edges must follow the cursor, got %+v", last)
+	}
+	if last.right != 1920 || last.bottom != 1120 {
+		t.Errorf("the opposite edges must stay, got %+v", last)
+	}
+}
+
+func TestResizeRespectsTheMinimumSize(t *testing.T) {
+	// The cursor is dragged far beyond the opposite edge: the window must stop
+	// at its minimum size instead of collapsing.
+	fake := &fakeResize{
+		cursor:     winPoint{x: 1920, y: 600},
+		boundsRect: winRect{left: 640, top: 320, right: 1920, bottom: 1120},
+		pressed:    true,
+		stepX:      -400,
+		releaseAt:  3,
+	}
+	runResize("right", fake.environment())
+
+	last := fake.rects[len(fake.rects)-1]
+	if last.right-last.left != minWindowWidth {
+		t.Errorf("width must be clamped to %d, got %d", minWindowWidth, last.right-last.left)
+	}
+}
+
+func TestResizeWithoutCursorIsIgnored(t *testing.T) {
+	env := resizeEnvironment{
+		buttonDown: func() bool { return true },
+		cursor:     func() (winPoint, bool) { return winPoint{}, false },
+		bounds:     func() (winRect, bool) { return winRect{}, true },
+		move:       func(int32, int32, int32, int32) { t.Error("the window must not be resized") },
+		sleep:      func(time.Duration) {},
+	}
+	runResize("bottomright", env)
+}

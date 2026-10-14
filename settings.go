@@ -20,10 +20,11 @@ type Settings struct {
 }
 
 type settingsFile struct {
-	Version    int          `json:"version"`
-	IntervalS  float64      `json:"intervalS"`
-	APIEnabled bool         `json:"apiEnabled"`
-	MQTT       mqttSettings `json:"mqtt"`
+	Version     int          `json:"version"`
+	IntervalS   float64      `json:"intervalS"`
+	ReleaseMins int          `json:"releaseMinutes"`
+	APIEnabled  bool         `json:"apiEnabled"`
+	MQTT        mqttSettings `json:"mqtt"`
 }
 
 type mqttSettings struct {
@@ -38,18 +39,23 @@ type mqttSettings struct {
 }
 
 // Limits of the refresh interval (the interface offers a slider inside these
-// bounds plus a free "custom" value).
+// bounds plus a free "custom" value) and of the release time, which is how long
+// the battery is handed over to another device.
 const (
-	minIntervalS     = 1.0
-	maxIntervalS     = 3600.0
-	defaultIntervalS = 5.0
+	minIntervalS       = 1.0
+	maxIntervalS       = 3600.0
+	defaultIntervalS   = 5.0
+	minReleaseMins     = 1
+	maxReleaseMins     = 120
+	defaultReleaseMins = 5
 )
 
 func defaultSettings() settingsFile {
 	return settingsFile{
-		Version:    1,
-		IntervalS:  defaultIntervalS,
-		APIEnabled: true,
+		Version:     1,
+		IntervalS:   defaultIntervalS,
+		ReleaseMins: defaultReleaseMins,
+		APIEnabled:  true,
 		MQTT: mqttSettings{
 			Port:            1883,
 			TopicPrefix:     "lifepo4bms",
@@ -89,6 +95,9 @@ func sanitizeSettings(value settingsFile) settingsFile {
 	if value.IntervalS < minIntervalS || value.IntervalS > maxIntervalS {
 		value.IntervalS = defaults.IntervalS
 	}
+	if value.ReleaseMins < minReleaseMins || value.ReleaseMins > maxReleaseMins {
+		value.ReleaseMins = defaults.ReleaseMins
+	}
 	if value.MQTT.Port < 1 || value.MQTT.Port > 65535 {
 		value.MQTT.Port = defaults.MQTT.Port
 	}
@@ -96,6 +105,17 @@ func sanitizeSettings(value settingsFile) settingsFile {
 	value.MQTT.Username = strings.TrimSpace(value.MQTT.Username)
 	value.MQTT.TopicPrefix = sanitizeTopicPart(value.MQTT.TopicPrefix, defaults.MQTT.TopicPrefix)
 	value.MQTT.DiscoveryPrefix = sanitizeTopicPart(value.MQTT.DiscoveryPrefix, defaults.MQTT.DiscoveryPrefix)
+	return value
+}
+
+// clampInt keeps a value inside a range.
+func clampInt(value, low, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
 	return value
 }
 
@@ -135,6 +155,13 @@ func (s *Settings) APIEnabled() bool {
 	return s.value.APIEnabled
 }
 
+// ReleaseDuration is how long the battery is left free for another device.
+func (s *Settings) ReleaseDuration() time.Duration {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return time.Duration(s.value.ReleaseMins) * time.Minute
+}
+
 // MQTT returns a copy of the MQTT configuration.
 func (s *Settings) MQTT() mqttSettings {
 	s.mutex.RLock()
@@ -144,33 +171,45 @@ func (s *Settings) MQTT() mqttSettings {
 
 // View is the JSON representation handed to the interface.
 type settingsView struct {
-	IntervalS  float64      `json:"intervalS"`
-	MinS       float64      `json:"minIntervalS"`
-	MaxS       float64      `json:"maxIntervalS"`
-	APIEnabled bool         `json:"apiEnabled"`
-	MQTT       mqttSettings `json:"mqtt"`
-	Path       string       `json:"path"`
+	IntervalS      float64      `json:"intervalS"`
+	MinS           float64      `json:"minIntervalS"`
+	MaxS           float64      `json:"maxIntervalS"`
+	ReleaseMins    int          `json:"releaseMinutes"`
+	MinReleaseMins int          `json:"minReleaseMinutes"`
+	MaxReleaseMins int          `json:"maxReleaseMinutes"`
+	APIEnabled     bool         `json:"apiEnabled"`
+	MQTT           mqttSettings `json:"mqtt"`
+	Path           string       `json:"path"`
+}
+
+// viewLocked builds the JSON view; the caller holds the lock.
+func (s *Settings) viewLocked() settingsView {
+	return settingsView{
+		IntervalS:      s.value.IntervalS,
+		MinS:           minIntervalS,
+		MaxS:           maxIntervalS,
+		ReleaseMins:    s.value.ReleaseMins,
+		MinReleaseMins: minReleaseMins,
+		MaxReleaseMins: maxReleaseMins,
+		APIEnabled:     s.value.APIEnabled,
+		MQTT:           s.value.MQTT,
+		Path:           s.path,
+	}
 }
 
 func (s *Settings) View() settingsView {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	return settingsView{
-		IntervalS:  s.value.IntervalS,
-		MinS:       minIntervalS,
-		MaxS:       maxIntervalS,
-		APIEnabled: s.value.APIEnabled,
-		MQTT:       s.value.MQTT,
-		Path:       s.path,
-	}
+	return s.viewLocked()
 }
 
 // settingsPatch carries the fields a settings update may change. Pointers make
 // "not provided" distinguishable from "set to zero".
 type settingsPatch struct {
-	IntervalS  *float64      `json:"intervalS"`
-	APIEnabled *bool         `json:"apiEnabled"`
-	MQTT       *mqttSettings `json:"mqtt"`
+	IntervalS   *float64      `json:"intervalS"`
+	ReleaseMins *int          `json:"releaseMinutes"`
+	APIEnabled  *bool         `json:"apiEnabled"`
+	MQTT        *mqttSettings `json:"mqtt"`
 }
 
 // Update applies a patch, stores it and returns the resulting view together
@@ -191,6 +230,9 @@ func (s *Settings) Update(patch settingsPatch) (settingsView, time.Duration, tim
 	if patch.APIEnabled != nil {
 		s.value.APIEnabled = *patch.APIEnabled
 	}
+	if patch.ReleaseMins != nil {
+		s.value.ReleaseMins = clampInt(*patch.ReleaseMins, minReleaseMins, maxReleaseMins)
+	}
 	if patch.MQTT != nil {
 		incoming := *patch.MQTT
 		if incoming.Port == 0 {
@@ -203,20 +245,14 @@ func (s *Settings) Update(patch settingsPatch) (settingsView, time.Duration, tim
 			incoming.DiscoveryPrefix = s.value.MQTT.DiscoveryPrefix
 		}
 		s.value.MQTT = sanitizeSettings(settingsFile{
-			Version:   s.value.Version,
-			IntervalS: s.value.IntervalS,
-			MQTT:      incoming,
+			Version:     s.value.Version,
+			IntervalS:   s.value.IntervalS,
+			ReleaseMins: s.value.ReleaseMins,
+			MQTT:        incoming,
 		}).MQTT
 	}
 	after := time.Duration(s.value.IntervalS * float64(time.Second))
-	view := settingsView{
-		IntervalS:  s.value.IntervalS,
-		MinS:       minIntervalS,
-		MaxS:       maxIntervalS,
-		APIEnabled: s.value.APIEnabled,
-		MQTT:       s.value.MQTT,
-		Path:       s.path,
-	}
+	view := s.viewLocked()
 	s.mutex.Unlock()
 	s.save()
 	return view, before, after

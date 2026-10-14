@@ -22,6 +22,9 @@ func TestSettingsDefaultsAndLimits(t *testing.T) {
 	if mqtt := settings.MQTT(); mqtt.Enabled || mqtt.Port != 1883 || mqtt.TopicPrefix != "lifepo4bms" {
 		t.Errorf("unexpected default MQTT settings: %+v", mqtt)
 	}
+	if got := settings.ReleaseDuration(); got != 5*time.Minute {
+		t.Errorf("release time: got %s, want 5m", got)
+	}
 
 	// The interval is clamped to the supported range.
 	interval := 0.1
@@ -32,6 +35,18 @@ func TestSettingsDefaultsAndLimits(t *testing.T) {
 	if _, _, after := settings.Update(settingsPatch{IntervalS: &interval}); after != time.Hour {
 		t.Errorf("too large interval: got %s, want 1h", after)
 	}
+
+	// The release time is clamped to the supported range too.
+	tooShort := 0
+	view, _, _ := settings.Update(settingsPatch{ReleaseMins: &tooShort})
+	if got := settings.ReleaseDuration(); got != time.Minute || view.ReleaseMins != 1 {
+		t.Errorf("too short release: got %s (%d min), want 1m", got, view.ReleaseMins)
+	}
+	tooLong := 5000
+	view, _, _ = settings.Update(settingsPatch{ReleaseMins: &tooLong})
+	if got := settings.ReleaseDuration(); got != 120*time.Minute || view.ReleaseMins != 120 {
+		t.Errorf("too long release: got %s (%d min), want 120m", got, view.ReleaseMins)
+	}
 }
 
 func TestSettingsUpdatePersists(t *testing.T) {
@@ -40,6 +55,7 @@ func TestSettingsUpdatePersists(t *testing.T) {
 
 	interval := 12.0
 	apiEnabled := false
+	releaseMins := 15
 	mqttConfig := mqttSettings{
 		Enabled:         true,
 		Host:            "  broker.local  ",
@@ -51,15 +67,19 @@ func TestSettingsUpdatePersists(t *testing.T) {
 		DiscoveryPrefix: "ha",
 	}
 	view, before, after := settings.Update(settingsPatch{
-		IntervalS:  &interval,
-		APIEnabled: &apiEnabled,
-		MQTT:       &mqttConfig,
+		IntervalS:   &interval,
+		APIEnabled:  &apiEnabled,
+		ReleaseMins: &releaseMins,
+		MQTT:        &mqttConfig,
 	})
 	if before != 5*time.Second || after != 12*time.Second {
 		t.Errorf("interval transition: %s -> %s", before, after)
 	}
 	if view.IntervalS != 12 || view.APIEnabled || !view.MQTT.Enabled {
 		t.Errorf("unexpected view: %+v", view)
+	}
+	if view.MinReleaseMins != 1 || view.MaxReleaseMins != 120 {
+		t.Errorf("release limits not exposed: %+v", view)
 	}
 	if view.MQTT.Host != "broker.local" {
 		t.Errorf("host must be trimmed, got %q", view.MQTT.Host)
@@ -79,12 +99,18 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	if mqtt := reloaded.MQTT(); mqtt.Host != "broker.local" || mqtt.Port != 8883 || mqtt.Password != "secret" {
 		t.Errorf("MQTT settings not persisted: %+v", mqtt)
 	}
+	if got := reloaded.ReleaseDuration(); got != 15*time.Minute {
+		t.Errorf("release time not persisted: %s", got)
+	}
 
 	// Without a patch the other values stay untouched.
 	interval = 30
 	view, _, _ = settings.Update(settingsPatch{IntervalS: &interval})
 	if !view.MQTT.Enabled || view.MQTT.Host != "broker.local" {
 		t.Errorf("partial update cleared MQTT settings: %+v", view.MQTT)
+	}
+	if view.ReleaseMins != 15 {
+		t.Errorf("partial update cleared the release time: %d", view.ReleaseMins)
 	}
 	if _, err := os.Stat(filepath.Join(directory, "settings.json")); err != nil {
 		t.Errorf("settings.json missing: %v", err)

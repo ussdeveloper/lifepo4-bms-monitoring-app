@@ -24,9 +24,9 @@ func TestSamplePowerSign(t *testing.T) {
 func TestPowerTrackKeepsTheWindowOnly(t *testing.T) {
 	track := newPowerTrack()
 	now := time.Now()
-	track.Add("AA", now.Add(-15*time.Minute), 100)
-	track.Add("AA", now.Add(-5*time.Minute), 120)
-	track.Add("AA", now, 140)
+	track.Add("AA", now.Add(-15*time.Minute), 100, 60)
+	track.Add("AA", now.Add(-5*time.Minute), 120, 70)
+	track.Add("AA", now, 140, 80)
 
 	points := track.Points("AA", now)
 	if len(points) != 2 {
@@ -51,7 +51,7 @@ func TestPowerTrackSeedFillsOnlyEmptySeries(t *testing.T) {
 	}
 
 	collected := newPowerTrack()
-	collected.Add("AA", now, 90)
+	collected.Add("AA", now, 90, 50)
 	collected.Seed("AA", seed, now)
 	if points := collected.Points("AA", now); len(points) != 1 || points[0].Watts != 90 {
 		t.Fatalf("seed must not replace readings of this run: %+v", points)
@@ -66,7 +66,7 @@ func TestPowerTrackSeedFillsOnlyEmptySeries(t *testing.T) {
 
 func TestSessionStateCarriesPowerSeries(t *testing.T) {
 	session := &Session{power: newPowerTrack(), status: sessionConnected, address: "AA:BB:CC:DD:EE:FF"}
-	session.power.Add(session.address, time.Now(), 120)
+	session.power.Add(session.address, time.Now(), 120, 77)
 
 	state := session.State()
 	if len(state.Power) != 1 || state.Power[0].Watts != 120 {

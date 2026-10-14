@@ -257,6 +257,7 @@ type statePayload struct {
 	Discharging bool      `json:"discharging"`
 	Balancing   bool      `json:"balancing"`
 	Problem     uint32    `json:"problem"`
+	EtaMinutes  int       `json:"eta_min,omitempty"`
 }
 
 func buildStatePayload(battery storeDevice) ([]byte, error) {
@@ -308,6 +309,9 @@ func buildStatePayload(battery storeDevice) ([]byte, error) {
 	if sample.ProblemCode != nil {
 		payload.Problem = *sample.ProblemCode
 	}
+	if sample.EtaS > 0 {
+		payload.EtaMinutes = int(sample.EtaS / 60)
+	}
 	return json.Marshal(payload)
 }
 
@@ -335,6 +339,7 @@ var discoveryEntities = []discoveryEntity{
 	{component: "sensor", objectID: "temp_min", name: "Temperature minimum", template: "{{ value_json.temp_min_c }}", unit: "\u00b0C", deviceClass: "temperature"},
 	{component: "sensor", objectID: "temp_max", name: "Temperature maximum", template: "{{ value_json.temp_max_c }}", unit: "\u00b0C", deviceClass: "temperature"},
 	{component: "sensor", objectID: "problems", name: "Problem codes", template: "{{ value_json.problem }}"},
+	{component: "sensor", objectID: "eta", name: "Time to full or empty", template: "{{ value_json.eta_min }}", unit: "min", deviceClass: "duration"},
 	{component: "binary_sensor", objectID: "charging", name: "Charging", template: "{{ value_json.charging }}", deviceClass: "battery_charging"},
 	{component: "binary_sensor", objectID: "discharging", name: "Discharging", template: "{{ value_json.discharging }}", deviceClass: "power"},
 	{component: "binary_sensor", objectID: "balancing", name: "Balancing", template: "{{ value_json.balancing }}"},

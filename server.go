@@ -52,6 +52,8 @@ func NewServer(hub *Hub, session *Session, window *windowController, settings *S
 	server.mux.HandleFunc("/api/state", server.handleState)
 	server.mux.HandleFunc("/api/select", server.handleSelect)
 	server.mux.HandleFunc("/api/deepscan", server.handleDeepScan)
+	server.mux.HandleFunc("/api/release", server.handleRelease)
+	server.mux.HandleFunc("/api/add", server.handleAdd)
 	server.mux.HandleFunc("/api/window", server.handleWindow)
 	server.mux.HandleFunc("/api/settings", server.handleSettings)
 	server.mux.HandleFunc("/api/batteries", server.handleBatteries)
@@ -61,13 +63,14 @@ func NewServer(hub *Hub, session *Session, window *windowController, settings *S
 func (s *Server) Handler() http.Handler { return s.mux }
 
 type configResponse struct {
-	Version       string       `json:"version"`
-	Language      string       `json:"language"`
-	IntervalS     float64      `json:"intervalS"`
-	DataDir       string       `json:"dataDir"`
-	Platform      string       `json:"platform"`
-	MQTTConnected bool         `json:"mqttConnected"`
-	Settings      settingsView `json:"settings"`
+	Version       string         `json:"version"`
+	Language      string         `json:"language"`
+	IntervalS     float64        `json:"intervalS"`
+	DataDir       string         `json:"dataDir"`
+	Platform      string         `json:"platform"`
+	MQTTConnected bool           `json:"mqttConnected"`
+	Radios        []radioSummary `json:"radios"`
+	Settings      settingsView   `json:"settings"`
 }
 
 type stateResponse struct {
@@ -91,6 +94,7 @@ func (s *Server) handleState(writer http.ResponseWriter, _ *http.Request) {
 			DataDir:       s.hub.StorageDir(),
 			Platform:      platformLabel(),
 			MQTTConnected: s.publisher.Connected(),
+			Radios:        s.hub.Radios(),
 			Settings:      s.settings.View(),
 		},
 	}
@@ -191,17 +195,60 @@ func (s *Server) handleDeepScan(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, map[string]string{"status": "ok"})
 }
 
+// handleRelease stops monitoring for a while so another device (a phone, a
+// second computer) can connect to the battery.
+func (s *Server) handleRelease(writer http.ResponseWriter, request *http.Request) {
+	var body struct {
+		Minutes float64 `json:"minutes"`
+	}
+	_ = json.NewDecoder(request.Body).Decode(&body)
+	if body.Minutes <= 0 || body.Minutes > maxReleaseMins {
+		body.Minutes = s.settings.ReleaseDuration().Minutes()
+	}
+	s.session.Release(time.Duration(body.Minutes * float64(time.Minute)))
+	writeJSON(writer, map[string]float64{"releasedS": body.Minutes * 60, "minutes": body.Minutes})
+}
+
+// handleAdd lists (or removes) a device the user typed in by hand, so a battery
+// that never shows up in a scan can still be monitored.
+func (s *Server) handleAdd(writer http.ResponseWriter, request *http.Request) {
+	var body struct {
+		Address string `json:"addr"`
+		Name    string `json:"name"`
+		Remove  bool   `json:"remove"`
+	}
+	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+		http.Error(writer, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if body.Remove {
+		if err := s.hub.RemoveManual(body.Address); err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, map[string]string{"status": "removed", "addr": strings.ToUpper(body.Address)})
+		return
+	}
+	address, err := s.hub.AddManual(body.Address, body.Name)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(writer, map[string]string{"status": "added", "addr": address})
+}
+
 func (s *Server) handleWindow(writer http.ResponseWriter, request *http.Request) {
 	var body struct {
 		Action string `json:"action"`
+		Edge   string `json:"edge"`
 	}
 	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 		http.Error(writer, "invalid request", http.StatusBadRequest)
 		return
 	}
 	switch body.Action {
-	case "minimize", "maximize", "close", "drag":
-		s.window.handleAction(body.Action)
+	case "minimize", "maximize", "close", "drag", "resize":
+		s.window.handleAction(body.Action, body.Edge)
 		writeJSON(writer, map[string]string{"status": "ok"})
 	default:
 		http.Error(writer, "unknown window action", http.StatusBadRequest)

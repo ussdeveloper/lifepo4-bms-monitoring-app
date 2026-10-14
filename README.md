@@ -11,8 +11,10 @@ read request.
 ![Battery dashboard](docs/screenshots/dashboard.png)
 
 * Desktop application: Go + WebView2, frameless window with its own title bar, bilingual UI (English / Polish)
-* Detail panel: state of charge, voltage, current, charging power with a graph of the last ten minutes, cells, temperatures and MOSFET state
-* Settings panel: refresh interval, read API, MQTT with Home Assistant discovery
+* Two tabs on the left: **Batteries** (everything that answers) and **Bluetooth devices** (everything the scan sees), each with a count
+* Title bar: drag, resize from every edge, and an *unplug* button that releases the battery to another device for the configured number of minutes
+* Detail panel: state of charge, voltage, current, charging power with a graph of the last ten minutes, estimated time to full (or empty), cells, temperatures and MOSFET state
+* Settings panel: refresh interval, release time, Bluetooth radios, read API, MQTT with Home Assistant discovery
 * Command line tool: Python TUI for quick checks and reports (`cli/`)
 * Battery data and history are stored per user in `%APPDATA%\LiFePO4BMSMonitor`
 
@@ -107,11 +109,13 @@ How the interface behaves:
   automatic choice resumes when the pinned battery is out of range.
 * A small charging indicator next to the battery name shows whether the battery
   is charging, discharging or idle.
-* When no battery is in range yet, the panel lists **every** Bluetooth device
-  the scanner sees together with its state (`queued`, `reading`, `no BMS`,
-  `no answer`) and signal strength — so it is obvious that the scan works and
-  what is around. Devices without an advertised name are shown the way Windows
-  shows them, for example `Bluetooth AA:BB:CC:DD:EE:FF`.
+* The left panel has two tabs: **Batteries** (everything that answers, including
+  addresses added by hand) and **Bluetooth devices** (everything the scanner
+  sees, with its state `queued`, `reading`, `no BMS`, `no answer` and signal
+  strength), each with a count. The device tab is where it is obvious that the
+  scan works and what is around; devices without an advertised name are shown the
+  way Windows shows them, for example `Bluetooth AA:BB:CC:DD:EE:FF`. Until a tab
+  is picked by hand, an empty battery list opens on the device list.
 * The window has its own title bar (drag anywhere on it), a language switch and
   a status bar showing scan state, device counts, history size and version.
 * **Check every device** re-probes all visible devices, including the ones that
@@ -135,9 +139,64 @@ The gear icon in the title bar opens the settings panel. Everything is stored in
 | Setting | Meaning |
 |---|---|
 | Refresh interval | slider from 2 s to 30 s, plus a free value (1 s … 1 h) in the number field |
+| Bluetooth radios | how many radios Windows reports (the scan itself uses the default one) |
 | Read API | switch for the public read endpoint (see below) |
 | MQTT and Home Assistant | broker host, port, user, password, topic prefix |
 | Home Assistant discovery | announce every battery as a Home Assistant device |
+
+### Two Bluetooth radios (or a battery that never shows up)
+
+Windows scans with **one** radio — the default one — and a computer can have
+two (an internal one plus a USB dongle). A battery that only the other radio
+hears therefore never appears in the scan, even though Windows itself can reach
+it. The application handles this in two ways:
+
+* It reports how many radios the computer has (settings panel) and asks every
+  radio which batteries it knows; those addresses are added to the list and
+  connected to directly.
+* **Add by MAC** (button next to *Check every device*) lists an address by hand.
+  The address is probed and connected to without an advertisement, and Windows
+  routes the connection over whichever radio can see the device — this is the
+  reliable way to monitor a battery on the radio the scan does not use. The
+  address survives restarts and can be removed again in the same dialog.
+
+### When another application takes the battery
+
+A BMS accepts **one connection at a time**, and a phone application (or a second
+computer) simply takes it: the BMS drops the older connection and serves the new
+one. This application behaves the same way — it keeps reading until another
+application takes over and then keeps trying to take the battery back, so the two
+applications end up taking turns instead of stepping on each other.
+
+While that happens the detail panel says so (*Another application connected to
+this battery — taking it back*) and keeps showing the last reading received. As
+soon as the other application disconnects, monitoring continues on its own; no
+click is needed. The same applies to a battery that is asleep: it is retried
+until it answers.
+
+### Letting the battery go on purpose
+
+Because a BMS serves one connection at a time, a battery held by this application
+usually cannot even be **seen** by another computer — while a central is
+connected the BMS stops advertising. To hand the battery over, the *unplug*
+button in the title bar releases it for the configured release time (settings
+panel, five minutes by default):
+
+* monitoring stops, the connection is dropped and the status bar counts the time
+  left (*the battery is released for another application*);
+* the BMS starts advertising again, so a phone or a second computer can scan,
+  find and connect to it;
+* after the release window the application takes the battery back on its own.
+
+On the other computer the reliable route is **Add by MAC**: a phone wins against
+this application because it already knows the address and connects to it without
+waiting for an advertisement, and Windows can do the same once the address is
+listed by hand.
+
+The release can also be requested from the read API with
+`POST /api/release {"minutes": 5}` (the configured value is used when the body is
+empty).
+
 
 ### Read API
 
@@ -196,8 +255,14 @@ entities:
 
 | Type | Entities |
 |---|---|
-| `sensor` | state of charge, voltage, current, remaining and design capacity, cycles, cell voltage minimum/maximum/spread, temperature minimum/maximum, problem codes |
+| `sensor` | state of charge, voltage, current, remaining and design capacity, cycles, cell voltage minimum/maximum/spread, temperature minimum/maximum, problem codes, time to full or empty |
 | `binary_sensor` | charging, discharging, balancing |
+
+The time to full (or empty) is estimated from two things: the charge that still
+has to move at the current (coulomb counting) and how the state of charge moved
+over the last minutes, which also covers the tapering current at the end of a
+charge. The estimate is dropped when the battery is idle or when the numbers
+would be meaningless (below 30 s or beyond two days).
 
 The last known state is published right after connecting, so Home Assistant has
 values even when a battery is asleep at that moment.
@@ -257,6 +322,28 @@ Tests: `python -m pytest cli/tests -q`.
   reports the error instead of hiding it.
 * Bluetooth range matters: RSSI below about −90 dBm usually means unreliable
   reads. Keep the computer close to the battery while monitoring.
+* A battery is reachable from **one device at a time**. A phone application takes
+  the connection whenever it wants; this application then keeps retrying and
+  takes it back, and the panel says what is going on meanwhile — see
+  [When another application takes the battery](#when-another-application-takes-the-battery).
+
+### When no battery is found
+
+The right hand panel shows what the scanner actually sees
+(`advertisements · devices · devices with a name`) and the **Bluetooth devices**
+tab lists every device with its state, so the three possible reasons can be told
+apart:
+
+| What you see | What it means |
+|---|---|
+| advertisements keep growing, the battery is not in the list | the battery is asleep (nothing to do but wake it) or connected to another device (this application takes it back as soon as that connection ends) |
+| advertisements stand still | the scanner stalled; the application restarts the scan after 60 s of silence on its own |
+| devices appear with `Bluetooth <address>` and no name | the device does not advertise a name; the name is read from the BMS after the first successful connection and reported as `no BMS` when it is not a battery |
+
+The list shows only devices the current scan really sees — nothing is taken from
+a previous run's cache. The log file next to the executable names every newly
+seen device and reports the scan counters every 30 s while no battery answers,
+which makes a remote problem diagnosable without a debugger.
 
 ## License
 

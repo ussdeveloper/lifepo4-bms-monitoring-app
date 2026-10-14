@@ -231,6 +231,13 @@ body {
 
 .icon-button svg { width: 18px; height: 18px; }
 
+/* Active state: the battery is released for another device right now. */
+.icon-button.active {
+  color: var(--teal-dark);
+  background: rgba(0, 194, 194, 0.12);
+  border-color: rgba(0, 194, 194, 0.45);
+}
+
 /* Language switch (English / Polish). */
 .lang-button {
   gap: 8px;
@@ -293,6 +300,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  line-height: 1;
   padding: 5px 13px;
   border-radius: 999px;
   border: 1px solid rgba(0, 26, 77, 0.16);
@@ -309,10 +317,14 @@ body {
 
 .chip .dot {
   width: 8px; height: 8px;
+  flex: none;
   border-radius: 50%;
   background: var(--teal);
   box-shadow: 0 0 0 0 rgba(0, 194, 194, 0.45);
   animation: pulse 2.4s ease-out infinite;
+  /* Uppercase text sits above the line box centre, so the dot is nudged up to
+     look centred next to the label. */
+  margin-top: -1px;
 }
 
 @keyframes pulse {
@@ -379,6 +391,75 @@ main {
   letter-spacing: 0.4px;
 }
 
+.head-left { min-width: 0; }
+
+/* Two views of the same scan: the batteries that answer and every Bluetooth
+   device that was seen. */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.tab:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+
+.tab.active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: var(--glass-border);
+  box-shadow: 0 1px 2px rgba(16, 24, 60, 0.06), 0 8px 18px rgba(16, 24, 60, 0.07);
+}
+
+.tab-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(0, 26, 77, 0.06);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.tab.active .tab-count { background: rgba(0, 194, 194, 0.16); color: #00706f; }
+
+.head-notes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Shown in the batteries tab while no battery has been found yet. */
+.list-empty {
+  margin: 4px 6px 0;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(0, 26, 77, 0.14);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 300;
+  text-align: center;
+}
+
 /* The frame around the list never scrolls: it keeps its rounded corners and
    its elevation, and only the rows (or the device list) inside it move. */
 .list-area {
@@ -386,6 +467,30 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Device list when no battery is known: it fills the panel, because the radar
+   and the explanations moved to the right hand panel. */
+.devices-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 12px 2px;
+  overflow: hidden;
+}
+
+.devices-scroll .checking-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  margin-top: 2px;
+  padding: 2px 4px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
 }
 
 .cards-scroll {
@@ -513,6 +618,10 @@ main {
 
 .badge { font-size: 10.5px; padding: 4px 11px; letter-spacing: 1.6px; }
 
+/* Protocol badge and, for an address added by hand, the marker next to it. */
+.card-badges { display: flex; align-items: center; gap: 6px; }
+.badge.manual { border-color: rgba(0, 26, 77, 0.26); color: var(--ink-soft); letter-spacing: 1.1px; }
+
 .badge.hs03 { border-color: rgba(0, 194, 194, 0.6); color: #00706f; }
 .badge.hs04 { border-color: rgba(138, 111, 230, 0.6); color: #5a3fc0; }
 .badge.jbd { border-color: rgba(79, 143, 220, 0.6); color: #245c9e; }
@@ -554,22 +663,32 @@ main {
   text-align: right;
 }
 
-/* --- empty state + device check list --- */
+/* --- scanning panel in the detail area --- */
 
-.empty {
-  flex: 1;
-  min-height: 0;
+.detail-scan {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* The scrolling device list stays clear of the rounded frame edges. */
-  padding: 30px 28px 24px;
   text-align: center;
-  overflow: hidden;
+  padding: 24px 8px 0;
 }
 
-.empty h3 { margin: 18px 0 8px; font-weight: 200; font-size: 22px; letter-spacing: 0.3px; }
-.empty p { margin: 0 auto; max-width: 520px; color: var(--ink-soft); }
+.detail-scan h3 { margin: 18px 0 8px; font-weight: 200; font-size: 22px; letter-spacing: 0.3px; }
+.detail-scan p { margin: 0 auto; max-width: 420px; color: var(--ink-soft); }
+
+/* Scan diagnostics: they tell "the battery is not here" apart from "the scan
+   itself is not working". */
+.empty-note {
+  margin: 14px auto 0 !important;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.empty-note-line { line-height: 1.45; }
 
 .radar {
   width: 74px; height: 74px;
@@ -598,22 +717,12 @@ main {
 @keyframes sweep { to { transform: rotate(360deg); } }
 
 .checking-list {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 760px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: stretch;
   justify-content: flex-start;
-  margin-top: 4px;
-  padding: 2px 4px 16px 2px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
+  margin-top: 6px;
 }
 
 /* List of every device the scanner sees, shown when no battery was found. */
@@ -622,13 +731,12 @@ main {
 .device-caption {
   display: block;
   width: 100%;
-  max-width: 760px;
   font-size: 11px;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--ink-faint);
   text-align: left;
-  padding: 2px 4px 8px;
+  padding: 4px 4px 8px;
 }
 
 .device-row {
@@ -782,6 +890,9 @@ main {
 .spark-dot { fill: var(--teal); stroke: #fff; stroke-width: 1; }
 
 .metric-note { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.5px; }
+
+/* Estimated time until the battery is full (or empty). */
+.metric-eta { font-size: 12.5px; color: var(--teal-dark); letter-spacing: 0.2px; }
 
 .power-metric.charging .metric-value { color: #0d8f8f; }
 .power-metric.discharging .metric-value { color: #b45f00; }
@@ -1007,6 +1118,7 @@ main {
 }
 
 .settings-foot .mono { font-size: 11px; color: var(--ink-faint); }
+.settings-foot .pill { margin-left: auto; }
 
 /* Switch */
 .switch { position: relative; display: inline-flex; width: 46px; height: 26px; flex: none; }
@@ -1063,6 +1175,64 @@ main {
 
 .status-dot.stopped { background: #d08a2a; animation: none; }
 .status-dot.error { background: #d63e3e; animation: none; }
+
+/* --- manual entry ("add by MAC") --- */
+
+.head-actions { display: flex; align-items: center; gap: 8px; }
+
+.pill-small { padding: 6px 14px; font-size: 11px; letter-spacing: 1.1px; }
+
+.add-card { width: min(560px, calc(100vw - 60px)); }
+
+.add-card .setting { align-items: flex-start; }
+
+.add-card input.text {
+  width: 190px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(0, 26, 77, 0.16);
+  background: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.add-card input.text.mono { font-family: "Cascadia Mono", Consolas, monospace; letter-spacing: 0.6px; }
+
+.add-card input.text:focus {
+  outline: none;
+  border-color: var(--teal-dark);
+  box-shadow: 0 0 0 3px rgba(0, 194, 194, 0.16);
+}
+
+/* Addresses already added by hand, each with a remove button. */
+.add-list { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 2px; }
+
+.add-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12.5px;
+}
+
+.add-item .mono { font-size: 12px; }
+
+.add-remove {
+  border: none;
+  background: transparent;
+  color: rgba(0, 26, 77, 0.45);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.add-remove:hover { color: #b42318; background: rgba(180, 35, 24, 0.08); }
 
 /* --- scrollbars --- */
 

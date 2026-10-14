@@ -16,7 +16,7 @@ talks to Bluetooth LE directly, without any external service.
 │      ├── session.go  polling session for the selected battery             │
 │      ├── identify.go vendor neutral protocol detection                    │
 │      ├── protocol*.go framing, checksums and decoding                     │
-│      ├── settings.go settings.json (interval, read API, MQTT)             │
+│      ├── settings.go settings.json (interval, sharing, read API, MQTT)      │
 │      ├── mqtt.go     MQTT publishing + Home Assistant discovery           │
 │      └── store.go    devices.json + history/*.csv in the user profile     │
 │                                                                           │
@@ -93,6 +93,7 @@ second and updates the DOM in place (stable hover state, animated bars).
 | `hub.checking` | devices currently queued or being probed |
 | `hub.devices` | every device of the current scan, sorted alphabetically by name (then address) — a stable order, unlike signal strength |
 | `hub.pending`, `hub.rejected`, `hub.identified` | progress counters |
+| `hub.adverts`, `hub.named`, `hub.scanRestarts` | scan health: advertisements received, devices that advertise a name, scan restarts after 60 s of silence |
 | `session` | state and last reading of the monitored battery, plus `session.power`: the readings of the last ten minutes (unix milliseconds and watts) used by the charging power graph |
 | `config` | version, default language, refresh interval, data directory, platform |
 
@@ -110,7 +111,7 @@ second and updates the DOM in place (stable hover state, animated bars).
 
 | File | Content |
 |---|---|
-| `settings.json` | refresh interval, read API switch and MQTT configuration |
+| `settings.json` | refresh interval, monitoring (shared) mode, read API switch and MQTT configuration |
 | `devices.json` | version, timestamp and one entry per device: address, name, model, brand, protocol, status (`bms`/`notBMS`), RSSI, last seen time and the newest reading |
 | `history\<address>.csv` | one row per sample with the columns documented in the README |
 

@@ -18,14 +18,20 @@ const STRINGS = {
     "window.close": "Close",
     "lang.switch": "Switch language (English / Polish)",
     "grid.title": "Detected batteries",
+    "tabs.batteries": "Batteries",
+    "tabs.devices": "Bluetooth devices",
     "grid.deepscan": "Check every device",
     "grid.refresh": "data refreshed every {n} s",
     "grid.progress": "waiting: {pending} · no BMS: {rejected}",
     "grid.saved": "saved batteries appear here even while they are asleep",
     "empty.title": "Looking for batteries…",
     "empty.hint": "If the BMS is asleep, press the wake-up button on the battery — it will show up here automatically.",
+    "empty.noBatteries": "No battery yet — one appears here as soon as the scan finds it.",
     "empty.inRange": "Bluetooth devices in range: {n}",
     "empty.noDevices": "No Bluetooth devices in range yet — check that Bluetooth is switched on.",
+    "empty.shareHint": "A battery that is already connected (phone application or another computer) stops advertising and cannot be found until that connection is closed.",
+    "scan.stats": "{adverts} advertisements · {devices} devices · {named} with a name{restarts}",
+    "scan.restarts": " · scan restarts: {n}",
     "checking.queued": "{name} · queued",
     "checking.probing": "{name} · reading…",
     "state.bms": "BMS",
@@ -41,6 +47,10 @@ const STRINGS = {
     "detail.hoverHint": "Hover a battery on the left. Data is read from its BMS every few seconds.",
     "detail.connecting": "Connecting to the battery and starting the reader…",
     "detail.retrying": "Battery is not answering — reconnecting (attempt {n})…",
+    "detail.takeover": "Another application connected to this battery (a phone application or a second computer) — taking it back. The reading below is the last one received.",
+    "release.button": "Release the battery for other devices",
+    "release.done": "released for {n} min · another device can connect now",
+    "release.hint": "The battery is free for another device — click the button again (or pick a battery) to monitor it here.",
     "detail.batteryFallback": "Battery",
     "metric.soc.short": "state of charge",
     "metric.voltage": "Voltage",
@@ -49,6 +59,12 @@ const STRINGS = {
     "metric.powerCharging": "Charging power",
     "metric.powerDischarging": "Discharging power",
     "metric.powerWindow": "last 10 minutes",
+    "eta.full": "full in {time}",
+    "eta.empty": "empty in {time}",
+    "eta.days": "{n} days",
+    "eta.hoursMinutes": "{h} h {m} min",
+    "eta.hours": "{h} h",
+    "eta.minutes": "{m} min",
     "metric.soh": "State of health",
     "metric.remaining": "Remaining",
     "metric.design": "Design capacity",
@@ -65,18 +81,40 @@ const STRINGS = {
     "status.batteries": "batteries: {n}",
     "status.interval": "refresh every {n} s",
     "status.waiting": "waiting for a battery to be selected",
+    "status.takeover": "taking the battery back from another application",
     "status.noBle": "no Bluetooth connection",
     "status.justNow": "last reading: just now",
     "status.ago": "last reading: {n} s ago",
     "status.samples": "history: {n} samples",
     "status.samplesEmpty": "history: empty",
+    "status.shared": "battery released · next read in {n} s",
     "settings.open": "Settings",
     "settings.close": "Close settings",
     "settings.eyebrow": "Configuration",
     "settings.title": "Settings",
     "settings.interval": "Refresh interval",
     "settings.intervalHint": "How often the monitored battery is read. The same value drives the CSV history.",
+    "settings.release": "Release time",
+    "settings.releaseHint": "How long the unplug button hands the battery over to another device, in minutes.",
     "settings.api": "Read API",
+    "settings.radios": "Bluetooth radios",
+    "settings.radiosHint": "Windows scans with the default radio. A battery that only another radio sees can be added by its address.",
+    "settings.radiosUnknown": "not detected",
+    "settings.radioNumber": "radio {n}",
+    "add.open": "+ Add by MAC",
+    "add.eyebrow": "Manual entry",
+    "add.title": "Add a battery by address",
+    "add.address": "Bluetooth address",
+    "add.addressHint": "Windows shows it in the device properties, for example AA:BB:CC:11:22:33. The address is used even while the battery does not advertise.",
+    "add.name": "Name (optional)",
+    "add.nameHint": "Shown on the list until the battery reports its own name.",
+    "add.save": "Add",
+    "add.saving": "saving…",
+    "add.added": "{addr} added — the application keeps trying to reach it.",
+    "add.removed": "{addr} removed.",
+    "add.none": "No address added by hand yet.",
+    "add.remove": "remove",
+    "add.needAddress": "Enter a Bluetooth address first.",
     "settings.apiHint": "HTTP endpoint with the last known state of every battery, including batteries that are asleep right now.",
     "settings.mqtt": "MQTT and Home Assistant",
     "settings.mqttHint": "Publish readings to a broker and announce every battery to Home Assistant with MQTT discovery.",
@@ -92,7 +130,7 @@ const STRINGS = {
     "settings.saved": "saved",
     "settings.saving": "saving…",
     "settings.apiDisabled": "The read API is disabled.",
-    "settings.apiUrl": "GET {url} (add ?addr=4E:DF:… for a single battery)",
+    "settings.apiUrl": "GET {url} (add ?addr=AA:BB:… for a single battery)",
     "charge.charging": "charging",
     "charge.discharging": "discharging",
     "charge.idle": "idle (no current)",
@@ -102,6 +140,7 @@ const STRINGS = {
     "card.battery": "Battery",
     "card.offline": "not in range · seen {n} min ago",
     "card.offlineNow": "not in range",
+    "card.manual": "by MAC",
     "flags.chargingMosfet": "Charging MOSFET",
     "flags.dischargingMosfet": "Discharging MOSFET",
     "flags.balancer": "Balancing",
@@ -126,6 +165,8 @@ const STRINGS = {
     "window.close": "Zamknij",
     "lang.switch": "Zmień język (angielski / polski)",
     "grid.title": "Wykryte akumulatory",
+    "tabs.batteries": "Akumulatory",
+    "tabs.devices": "Urządzenia Bluetooth",
     "grid.deepscan": "Sprawdź wszystkie urządzenia",
     "grid.refresh": "dane odświeżane co {n} s",
     "grid.progress": "w kolejce: {pending} · nie BMS: {rejected}",
@@ -133,7 +174,11 @@ const STRINGS = {
     "empty.title": "Szukam akumulatorów…",
     "empty.hint": "Jeśli BMS śpi, naciśnij przycisk wybudzania na akumulatorze — pojawi się na liście automatycznie.",
     "empty.inRange": "Urządzenia Bluetooth w zasięgu: {n}",
+    "empty.noBatteries": "Jeszcze brak akumulatora — pojawi się tutaj, gdy skan go znajdzie.",
     "empty.noDevices": "Brak urządzeń Bluetooth w zasięgu — sprawdź, czy Bluetooth jest włączony.",
+    "empty.shareHint": "Akumulator, który jest już połączony (aplikacja w telefonie lub inny komputer), przestaje się rozgłaszać i nie da się go znaleźć, dopóki tamto połączenie nie zostanie zamknięte.",
+    "scan.stats": "{adverts} rozgłoszeń · {devices} urządzeń · {named} z nazwą{restarts}",
+    "scan.restarts": " · restarty skanu: {n}",
     "checking.queued": "{name} · w kolejce",
     "checking.probing": "{name} · odczyt…",
     "state.bms": "BMS",
@@ -149,6 +194,10 @@ const STRINGS = {
     "detail.hoverHint": "Najedź kursorem na akumulator po lewej stronie. Dane są odczytywane z BMS co kilka sekund.",
     "detail.connecting": "Łączę się z akumulatorem i uruchamiam odczyt…",
     "detail.retrying": "Akumulator nie odpowiada — ponawiam połączenie (próba {n})…",
+    "detail.takeover": "Inna aplikacja połączyła się z tym akumulatorem (aplikacja w telefonie lub inny komputer) — odbieram go. Poniżej ostatni odebrany odczyt.",
+    "release.button": "Zwolnij akumulator dla innych urządzeń",
+    "release.done": "zwolniony na {n} min · inne urządzenie może się teraz połączyć",
+    "release.hint": "Akumulator jest wolny dla innego urządzenia — kliknij przycisk ponownie (albo wybierz akumulator), aby wrócić do monitorowania.",
     "detail.batteryFallback": "Akumulator",
     "metric.soc.short": "naładowanie",
     "metric.voltage": "Napięcie",
@@ -157,6 +206,12 @@ const STRINGS = {
     "metric.powerCharging": "Moc ładowania",
     "metric.powerDischarging": "Moc rozładowania",
     "metric.powerWindow": "ostatnie 10 minut",
+    "eta.full": "pełny za {time}",
+    "eta.empty": "rozładowany za {time}",
+    "eta.days": "{n} dni",
+    "eta.hoursMinutes": "{h} godz. {m} min",
+    "eta.hours": "{h} godz.",
+    "eta.minutes": "{m} min",
     "metric.soh": "Stan zdrowia",
     "metric.remaining": "Pozostało",
     "metric.design": "Pojemność projektowa",
@@ -173,6 +228,7 @@ const STRINGS = {
     "status.batteries": "akumulatory: {n}",
     "status.interval": "odświeżanie co {n} s",
     "status.waiting": "oczekuję na wybór akumulatora",
+    "status.takeover": "odbieram akumulator innej aplikacji",
     "status.noBle": "brak połączenia BLE",
     "status.justNow": "ostatni odczyt: przed chwilą",
     "status.ago": "ostatni odczyt: {n} s temu",
@@ -183,8 +239,28 @@ const STRINGS = {
     "settings.eyebrow": "Konfiguracja",
     "settings.title": "Ustawienia",
     "settings.interval": "Częstotliwość odświeżania",
+    "settings.release": "Czas zwolnienia",
+    "settings.releaseHint": "Na ile minut przycisk odłączania oddaje akumulator innemu urządzeniu.",
     "settings.intervalHint": "Jak często odczytywany jest monitorowany akumulator. Ta wartość steruje także zapisem historii CSV.",
     "settings.api": "API odczytu",
+    "settings.radios": "Radia Bluetooth",
+    "settings.radiosHint": "Windows skanuje domyślnym radiem. Akumulator widoczny tylko dla innego radia możesz dodać po adresie.",
+    "settings.radiosUnknown": "nie wykryto",
+    "settings.radioNumber": "radio {n}",
+    "add.open": "+ Dodaj po MAC",
+    "add.eyebrow": "Wpis ręczny",
+    "add.title": "Dodaj akumulator po adresie",
+    "add.address": "Adres Bluetooth",
+    "add.addressHint": "Windows pokazuje go we właściwościach urządzenia, na przykład AA:BB:CC:11:22:33. Adres jest używany także wtedy, gdy akumulator się nie rozgłasza.",
+    "add.name": "Nazwa (opcjonalnie)",
+    "add.nameHint": "Widoczna na liście, dopóki akumulator nie poda własnej nazwy.",
+    "add.save": "Dodaj",
+    "add.saving": "zapisuję…",
+    "add.added": "Dodano {addr} — aplikacja będzie próbować się z nim połączyć.",
+    "add.removed": "Usunięto {addr}.",
+    "add.none": "Nie dodano jeszcze żadnego adresu.",
+    "add.remove": "usuń",
+    "add.needAddress": "Najpierw podaj adres Bluetooth.",
     "settings.apiHint": "Punkt HTTP z ostatnim znanym stanem każdego akumulatora, także gdy akumulator teraz śpi.",
     "settings.mqtt": "MQTT i Home Assistant",
     "settings.mqttHint": "Wysyłaj odczyty do brokera i zgłaszaj każdy akumulator do Home Assistant przez MQTT discovery.",
@@ -200,7 +276,7 @@ const STRINGS = {
     "settings.saved": "zapisano",
     "settings.saving": "zapisuję…",
     "settings.apiDisabled": "API odczytu jest wyłączone.",
-    "settings.apiUrl": "GET {url} (dodaj ?addr=4E:DF:… dla jednego akumulatora)",
+    "settings.apiUrl": "GET {url} (dodaj ?addr=AA:BB:… dla jednego akumulatora)",
     "charge.charging": "ładowanie",
     "charge.discharging": "rozładowanie",
     "charge.idle": "bez prądu",
@@ -210,6 +286,7 @@ const STRINGS = {
     "card.battery": "Akumulator",
     "card.offline": "poza zasięgiem · widziany {n} min temu",
     "card.offlineNow": "poza zasięgiem",
+    "card.manual": "po MAC",
     "flags.chargingMosfet": "MOSFET ładowania",
     "flags.dischargingMosfet": "MOSFET rozładowania",
     "flags.balancer": "Balansowanie",
@@ -252,8 +329,26 @@ const el = {
   statusVersion: document.getElementById("status-version"),
   cards: document.getElementById("cards"),
   cardsScroll: document.getElementById("cards-scroll"),
+  cardsEmpty: document.getElementById("cards-empty"),
+  devicesScroll: document.getElementById("devices-scroll"),
+  tabBatteries: document.getElementById("tab-batteries"),
+  tabDevices: document.getElementById("tab-devices"),
+  tabBatteriesCount: document.getElementById("tab-batteries-count"),
+  tabDevicesCount: document.getElementById("tab-devices-count"),
+  detailScan: document.getElementById("detail-scan"),
+  addOverlay: document.getElementById("add-overlay"),
+  addOpen: document.getElementById("add-device"),
+  addClose: document.getElementById("add-close"),
+  addAddress: document.getElementById("add-address"),
+  addName: document.getElementById("add-name"),
+  addList: document.getElementById("add-list"),
+  addSave: document.getElementById("add-save"),
+  addState: document.getElementById("add-state"),
+  releaseButton: document.getElementById("release-button"),
+  releaseMinutes: document.getElementById("release-minutes"),
+  radiosValue: document.getElementById("radios-value"),
   checkingCaption: document.getElementById("checking-caption"),
-  empty: document.getElementById("empty"),
+  scanStats: document.getElementById("scan-stats"),
   checking: document.getElementById("checking"),
   deepscan: document.getElementById("deepscan"),
   refreshNote: document.getElementById("refresh-note"),
@@ -271,8 +366,7 @@ const el = {
   historyLine: document.getElementById("history-line"),
   statusMqtt: document.getElementById("status-mqtt"),
   settingsOverlay: document.getElementById("settings-overlay"),
-  settingsToggle: document.getElementById("settings-toggle"),
-  settingsClose: document.getElementById("settings-close"),
+  settingsToggle: document.getElementById("settings-toggle"),  settingsClose: document.getElementById("settings-close"),
   settingsSave: document.getElementById("settings-save"),
   settingsPath: document.getElementById("settings-path"),
   settingsState: document.getElementById("settings-state"),
@@ -301,6 +395,7 @@ const el = {
   powerMetric: document.getElementById("power-metric"),
   powerLabel: document.getElementById("power-label"),
   mPower: document.getElementById("m-power"),
+  mEta: document.getElementById("m-eta"),
   powerLine: document.getElementById("power-line"),
   powerArea: document.getElementById("power-area"),
   powerDot: document.getElementById("power-dot"),
@@ -420,12 +515,40 @@ function minutesSince(timestamp) {
 
 /* --- window chrome (custom title bar) --- */
 
-function windowAction(action) {
+function windowAction(action, edge) {
+  const body = edge ? { action, edge } : { action };
   return fetch("/api/window", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(body),
   }).catch(() => {});
+}
+
+/* --- window edges ---
+   The client area covers the whole window (the native frame is removed), so
+   Windows cannot size the window by itself: the interface reports which edge was
+   grabbed and the window is resized in the application. */
+const RESIZE_BAND = 6;
+const EDGE_CURSORS = {
+  top: "ns-resize",
+  bottom: "ns-resize",
+  left: "ew-resize",
+  right: "ew-resize",
+  topleft: "nwse-resize",
+  topright: "nesw-resize",
+  bottomleft: "nesw-resize",
+  bottomright: "nwse-resize",
+};
+
+// edgeAt tells which window edge the pointer is on (an empty string otherwise).
+function edgeAt(event) {
+  const vertical = event.clientY <= RESIZE_BAND
+    ? "top"
+    : event.clientY >= window.innerHeight - RESIZE_BAND ? "bottom" : "";
+  const horizontal = event.clientX <= RESIZE_BAND
+    ? "left"
+    : event.clientX >= window.innerWidth - RESIZE_BAND ? "right" : "";
+  return `${vertical}${horizontal}`;
 }
 
 document.querySelectorAll(".titlebar-buttons .win-button").forEach((button) => {
@@ -447,6 +570,7 @@ titlebar.addEventListener("mousedown", (event) => {
   if (event.target.closest(".win-button")) return;
   if (event.target.closest(".lang-button")) return;
   if (event.target.closest(".icon-button")) return;
+  if (edgeAt(event)) return; // the edge belongs to the resize handles
   windowAction("drag");
 });
 titlebar.addEventListener("dblclick", (event) => {
@@ -456,11 +580,153 @@ titlebar.addEventListener("dblclick", (event) => {
   windowAction("maximize");
 });
 
+// Resizing: the pointer on an edge shows the matching cursor and pressing the
+// left button hands the grab over to the window code.
+document.addEventListener("mousemove", (event) => {
+  const edge = edgeAt(event);
+  document.body.style.cursor = edge ? EDGE_CURSORS[edge] : "";
+});
+document.addEventListener("mousedown", (event) => {
+  if (event.button !== 0) return;
+  const edge = edgeAt(event);
+  if (!edge) return;
+  event.preventDefault();
+  windowAction("resize", edge);
+});
+
+/* --- add by MAC --- */
+
+function openAdd() {
+  el.addAddress.value = "";
+  el.addName.value = "";
+  el.addState.textContent = "";
+  renderManualList();
+  el.addOverlay.hidden = false;
+  el.addAddress.focus();
+}
+
+function closeAdd() {
+  el.addOverlay.hidden = true;
+}
+
+// renderManualList shows the addresses that were added by hand, each removable.
+function renderManualList() {
+  const manual = (state && state.hub && state.hub.manual) || [];
+  if (!manual.length) {
+    el.addList.innerHTML = `<span class="muted">${escapeHtml(t("add.none"))}</span>`;
+    return;
+  }
+  el.addList.innerHTML = manual
+    .map((address) => `<div class="add-item">
+        <span class="mono">${escapeHtml(address)}</span>
+        <button class="add-remove" type="button" data-addr="${escapeHtml(address)}">${escapeHtml(t("add.remove"))}</button>
+      </div>`)
+    .join("");
+  el.addList.querySelectorAll(".add-remove").forEach((button) => {
+    button.addEventListener("click", () => addDevice(button.dataset.addr, "", true));
+  });
+}
+
+async function addDevice(address, name, remove) {
+  el.addState.textContent = t("add.saving");
+  try {
+    const response = await fetch("/api/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addr: address, name, remove: Boolean(remove) }),
+    });
+    const text = (await response.text()).trim();
+    if (!response.ok) throw new Error(text || `HTTP ${response.status}`);
+    if (remove) {
+      el.addState.textContent = t("add.removed", { addr: address });
+    } else {
+      const result = JSON.parse(text);
+      el.addState.textContent = t("add.added", { addr: result.addr });
+      el.addAddress.value = "";
+      el.addName.value = "";
+    }
+    await poll();
+    renderManualList();
+  } catch (error) {
+    el.addState.textContent = String(error.message || error);
+  }
+}
+
+el.addOpen.addEventListener("click", (event) => {
+  event.stopPropagation();
+  openAdd();
+});
+el.addClose.addEventListener("click", closeAdd);
+el.addSave.addEventListener("click", () => {
+  const address = el.addAddress.value.trim();
+  if (!address) {
+    el.addState.textContent = t("add.needAddress");
+    return;
+  }
+  addDevice(address, el.addName.value.trim(), false);
+});
+el.addAddress.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") el.addSave.click();
+});
+el.addOverlay.addEventListener("mousedown", (event) => {
+  if (event.target === el.addOverlay) closeAdd();
+});
+
+/* --- releasing the battery (so another device can connect) --- */
+
+async function toggleRelease() {
+  const released = Number(state.session && state.session.releasedS) || 0;
+  try {
+    if (released > 0) {
+      // Back to monitoring: selecting the best battery resumes it.
+      await fetch("/api/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addr: "", manual: false }),
+      });
+      await poll();
+      return;
+    }
+    await fetch("/api/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes: releaseMinutes() }),
+    });
+    await poll();
+  } catch (error) {
+    // Nothing to show: the next poll reflects the real state anyway.
+  }
+}
+
+el.releaseButton.addEventListener("mousedown", (event) => event.stopPropagation());
+el.releaseButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleRelease();
+});
+
 /* --- settings panel --- */
 
 function openSettings() {
   fillSettings();
   el.settingsOverlay.hidden = false;
+}
+
+// releaseMinutes is how long the unplug button frees the battery; it is a
+// setting, so both the button and the settings panel read it from one place.
+function releaseMinutes() {
+  const configured = state && state.config && state.config.settings
+    ? Number(state.config.settings.releaseMinutes)
+    : NaN;
+  if (Number.isFinite(configured) && configured >= 1) return Math.round(configured);
+  return 5;
+}
+
+// releaseMinutesFromInput reads the settings field; an empty field leaves the
+// stored value alone.
+function releaseMinutesFromInput() {
+  const value = Number(el.releaseMinutes.value);
+  if (!Number.isFinite(value) || value < 1) return undefined;
+  return Math.round(Math.min(120, value));
 }
 
 function closeSettings() {
@@ -473,6 +739,7 @@ function fillSettings() {
   const interval = Number(settings.intervalS) || 5;
   el.intervalRange.value = String(Math.min(30, Math.max(2, Math.round(interval))));
   el.intervalCustom.value = String(interval);
+  el.releaseMinutes.value = String(releaseMinutes());
   el.apiToggle.checked = Boolean(settings.apiEnabled);
   el.mqttEnabled.checked = Boolean(settings.mqtt && settings.mqtt.enabled);
   el.mqttHost.value = (settings.mqtt && settings.mqtt.host) || "";
@@ -483,8 +750,21 @@ function fillSettings() {
   el.mqttDiscoveryPrefix.value = (settings.mqtt && settings.mqtt.discoveryPrefix) || "";
   el.mqttDiscovery.checked = Boolean(settings.mqtt && settings.mqtt.discovery);
   el.settingsPath.textContent = settings.path || "";
+  renderRadios();
   updateApiHint();
   renderIntervalSlider();
+}
+
+// renderRadios lists the Bluetooth radios of this computer: the BLE scan uses
+// the Windows default radio, so a computer with two radios is worth reporting.
+function renderRadios() {
+  const radios = (state && state.config && state.config.radios) || [];
+  if (!radios.length) {
+    el.radiosValue.textContent = t("settings.radiosUnknown");
+    return;
+  }
+  const named = radios.map((radio, index) => radio.name || t("settings.radioNumber", { n: index + 1 }));
+  el.radiosValue.textContent = `${radios.length} · ${named.join(", ")}`;
 }
 
 function updateApiHint() {
@@ -500,6 +780,7 @@ async function saveSettings() {
   const interval = Number(el.intervalCustom.value);
   const patch = {
     intervalS: Number.isFinite(interval) && interval > 0 ? interval : undefined,
+    releaseMinutes: releaseMinutesFromInput(),
     apiEnabled: el.apiToggle.checked,
     mqtt: {
       enabled: el.mqttEnabled.checked,
@@ -598,6 +879,11 @@ function renderCards() {
         const name = displayLabel(battery);
         const protocol = battery.protocol || "BMS";
         const offline = battery.online ? "" : " offline";
+        // An address added by hand is marked, because it is only a promise until
+        // the battery answers.
+        const manualChip = battery.manual
+          ? `<span class="chip badge manual">${escapeHtml(t("card.manual"))}</span>`
+          : "";
         return `
           <article class="card glass${offline}" data-addr="${escapeHtml(battery.addr)}">
             <div class="card-ident">
@@ -607,7 +893,10 @@ function renderCards() {
               </div>
               <span class="card-addr mono">${escapeHtml(battery.addr)}</span>
             </div>
-            <span class="chip badge ${protocolBadgeClass(battery.protocol)}">${escapeHtml(protocol)}</span>
+            <div class="card-badges">
+              <span class="chip badge ${protocolBadgeClass(battery.protocol)}">${escapeHtml(protocol)}</span>
+              ${manualChip}
+            </div>
             <div class="card-metrics">
               <div class="soc-bar"><span style="width:0%"></span></div>
               <div class="card-soc">–</div>
@@ -670,10 +959,45 @@ function renderCards() {
     card.classList.toggle("pinned", battery.addr === pinnedAddress);
   }
 
-  el.empty.hidden = batteries.length > 0;
-  el.cardsScroll.hidden = batteries.length === 0;
+  // The battery list is what the panel opens on; the device list has its own tab.
   el.cards.hidden = batteries.length === 0;
+  el.cardsEmpty.hidden = batteries.length > 0;
+  applyTab();
 }
+
+/* --- batteries / Bluetooth devices tabs --- */
+
+// Which of the two lists the left panel shows. Until the user picks a tab an
+// empty battery list falls back to the device list, which is the only
+// interesting view while nothing has been found.
+let activeTab = "batteries";
+let tabPickedByUser = false;
+
+function applyTab() {
+  const batteries = (state && state.hub && state.hub.batteries) || [];
+  const devices = (state && state.hub && state.hub.devices) || [];
+  if (!tabPickedByUser) {
+    activeTab = batteries.length === 0 && devices.length > 0 ? "devices" : "batteries";
+  }
+  const showDevices = activeTab === "devices";
+  el.cardsScroll.hidden = showDevices;
+  el.devicesScroll.hidden = !showDevices;
+  el.tabBatteries.classList.toggle("active", !showDevices);
+  el.tabDevices.classList.toggle("active", showDevices);
+  el.tabBatteries.setAttribute("aria-selected", String(!showDevices));
+  el.tabDevices.setAttribute("aria-selected", String(showDevices));
+  el.tabBatteriesCount.textContent = String(batteries.length);
+  el.tabDevicesCount.textContent = String(devices.length);
+}
+
+function showTab(name) {
+  tabPickedByUser = true;
+  activeTab = name;
+  applyTab();
+}
+
+el.tabBatteries.addEventListener("click", () => showTab("batteries"));
+el.tabDevices.addEventListener("click", () => showTab("devices"));
 
 function wireCards() {
   el.cards.querySelectorAll(".card").forEach((card) => {
@@ -702,9 +1026,18 @@ function chooseDevice(address) {
 
 function renderChecking() {
   const devices = state.hub.devices || [];
+  const hub = state.hub || {};
+  const restarts = Number(hub.scanRestarts) || 0;
+  el.scanStats.textContent = t("scan.stats", {
+    adverts: Number(hub.adverts) || 0,
+    devices: devices.length,
+    named: Number(hub.named) || 0,
+    restarts: restarts > 0 ? t("scan.restarts", { n: restarts }) : "",
+  });
   if (!devices.length) {
     el.checkingCaption.textContent = t("empty.noDevices");
     el.checking.innerHTML = "";
+    applyTab();
     return;
   }
   const rows = devices
@@ -721,6 +1054,7 @@ function renderChecking() {
     .join("");
   el.checkingCaption.textContent = t("empty.inRange", { n: devices.length });
   el.checking.innerHTML = rows;
+  applyTab();
 }
 
 // deviceStateClass maps a scanner status to a colour hint in the device list.
@@ -768,11 +1102,28 @@ function renderDetail() {
   badge(el.detailProto, session.protocol);
   badge(el.detailBrand, session.brand);
 
-  const hasData = Boolean(sample && session.status === "connected");
+  const takeover = Boolean(session.takeover);
+  const released = Number(session.releasedS) || 0;
+  const hasData = Boolean(sample && (session.status === "connected" || takeover));
+  // The radar and the scan explanations live in this panel; the left panel is
+  // left entirely to the device list.
+  el.detailScan.hidden = hasData || Boolean(session.addr) || released > 0;
   el.detailPlaceholder.hidden = hasData || session.status === "connecting" || session.status === "connected";
   el.detailContent.hidden = !hasData;
 
-  if (session.status === "error" && session.error) {
+  if (released > 0) {
+    // The battery was let go on purpose so another device can use it.
+    el.detailError.hidden = false;
+    el.errorHeadline.textContent = t("release.hint");
+    el.errorDetail.textContent = "";
+  } else if (takeover) {
+    // Another application (the phone application, a second computer) took the
+    // battery; the last reading stays on screen while this one keeps trying to
+    // take it back.
+    el.detailError.hidden = false;
+    el.errorHeadline.textContent = t("detail.takeover");
+    el.errorDetail.textContent = "";
+  } else if (session.status === "error" && session.error) {
     el.detailError.hidden = false;
     el.errorHeadline.textContent = t(`error.${session.errorCode || "generic"}`);
     el.errorDetail.textContent = session.error;
@@ -858,6 +1209,33 @@ function renderPower(session, sample) {
   el.powerArea.setAttribute("d", spark.area);
   el.powerDot.setAttribute("cx", spark.dot ? spark.dot[0].toFixed(2) : "-10");
   el.powerDot.setAttribute("cy", spark.dot ? spark.dot[1].toFixed(2) : "-10");
+
+  // Estimated time until the battery is full (charging) or empty (discharging).
+  const eta = Number(sample.etaS) || 0;
+  if (eta > 0 && (charging || discharging)) {
+    el.mEta.hidden = false;
+    el.mEta.textContent = t(charging ? "eta.full" : "eta.empty", { time: formatEta(eta) });
+  } else {
+    el.mEta.hidden = true;
+  }
+}
+
+// formatEta renders seconds as a short human readable duration. Minutes are
+// rounded first, so a value just below an hour never shows as "x h 60 min".
+function formatEta(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (total >= 24 * 3600) {
+    return t("eta.days", { n: Math.round(total / 86400) });
+  }
+  const totalMinutes = Math.round(total / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return minutes > 0
+      ? t("eta.hoursMinutes", { h: hours, m: minutes })
+      : t("eta.hours", { h: hours });
+  }
+  return t("eta.minutes", { m: Math.max(1, totalMinutes) });
 }
 
 // buildSpark converts readings into a path for the 120x34 sparkline. The window
@@ -1007,7 +1385,14 @@ function renderChrome() {
     el.statusMqtt.hidden = true;
   }
 
-  if (lastUpdatedAgo == null) {
+  const takeover = Boolean(state.session && state.session.takeover);
+  const released = Number(state.session && state.session.releasedS) || 0;
+  el.releaseButton.classList.toggle("active", released > 0);
+  if (released > 0) {
+    el.statusUpdated.textContent = t("release.done", { n: Math.max(1, Math.round(released / 60)) });
+  } else if (takeover) {
+    el.statusUpdated.textContent = t("status.takeover");
+  } else if (lastUpdatedAgo == null) {
     el.statusUpdated.textContent = enabled ? t("status.waiting") : t("status.noBle");
   } else {
     el.statusUpdated.textContent = lastUpdatedAgo < 1.5

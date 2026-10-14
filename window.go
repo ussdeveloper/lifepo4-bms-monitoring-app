@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -31,6 +32,7 @@ var (
 	procLoadImageW        = user32.NewProc("LoadImageW")
 	procGetModuleHandleW  = kernel32.NewProc("GetModuleHandleW")
 	procDwmSetAttribute   = dwmapi.NewProc("DwmSetWindowAttribute")
+	procCallWindowProcW   = user32.NewProc("CallWindowProcW")
 )
 
 const (
@@ -40,6 +42,9 @@ const (
 	wsMaximizeBox = 0x00010000
 	wsSysMenu     = 0x00080000
 	wsExAppWindow = 0x00040000
+
+	wmNCCalcSize = 0x0083
+	wmSize       = 0x0005
 
 	swpNoSize       = 0x0001
 	swpNoMove       = 0x0002
@@ -65,6 +70,10 @@ const (
 	dragFrameMillis = 8
 	dragMinMargin   = 90
 	dragMaxOffsetY  = 30
+
+	// Smallest window the layout still works in, used while resizing by hand.
+	minWindowWidth  = 900
+	minWindowHeight = 620
 )
 
 const (
@@ -72,11 +81,17 @@ const (
 	dwmcpRound                  = 2
 )
 
-// GWLP_STYLE (-16) and GWLP_EXSTYLE (-20) as unsigned values.
+// GWLP_STYLE (-16), GWLP_EXSTYLE (-20) and GWLP_WNDPROC (-4) as unsigned values.
 var (
 	gwlStyle   = ^uintptr(15)
 	gwlExStyle = ^uintptr(19)
+	gwlWndProc = ^uintptr(3)
 )
+
+// wndProcCallback holds the subclassed window procedure; the callback must stay
+// reachable for the lifetime of the window.
+var wndProcCallback uintptr
+var previousWndProc uintptr
 
 type winPoint struct{ x, y int32 }
 
@@ -85,14 +100,18 @@ type winRect struct{ left, top, right, bottom int32 }
 type windowController struct {
 	hwnd     uintptr
 	dragging atomic.Bool
+	resizing atomic.Bool
 }
 
 func (w *windowController) set(hwnd uintptr) {
 	w.hwnd = hwnd
 }
 
-// makeFrameless removes the classic Windows title bar while keeping the resize
-// frame and the Windows 11 rounded corners. Must run on the UI thread.
+// makeFrameless removes the classic Windows title bar, keeps the resize frame
+// and the Windows 11 rounded corners, and makes the client area cover the whole
+// window. Without that last step Windows keeps an invisible resize border
+// around a frameless window, which shows up as a margin around the interface.
+// Must run on the UI thread.
 func makeFrameless(hwnd uintptr) {
 	style, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlStyle)
 	newStyle := (style &^ uintptr(wsCaption)) |
@@ -101,6 +120,8 @@ func makeFrameless(hwnd uintptr) {
 
 	exStyle, _, _ := procGetWindowLongPtrW.Call(hwnd, gwlExStyle)
 	procSetWindowLongPtrW.Call(hwnd, gwlExStyle, exStyle|wsExAppWindow)
+
+	subclassWindow(hwnd)
 
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0,
 		swpNoMove|swpNoSize|swpNoZOrder|swpFrameChanged)
@@ -114,6 +135,30 @@ func makeFrameless(hwnd uintptr) {
 	)
 
 	applyWindowIcon(hwnd)
+}
+
+// subclassWindow installs the window procedure that gives the client area the
+// full window rectangle (WM_NCCALCSIZE). Everything else is forwarded.
+func subclassWindow(hwnd uintptr) {
+	if wndProcCallback == 0 {
+		wndProcCallback = syscall.NewCallback(windowProc)
+	}
+	previous, _, _ := procSetWindowLongPtrW.Call(hwnd, gwlWndProc, wndProcCallback)
+	previousWndProc = previous
+}
+
+func windowProc(hwnd, message, wparam, lparam uintptr) uintptr {
+	switch message {
+	case wmNCCalcSize:
+		if wparam != 0 {
+			// The whole window is client area: no invisible resize border, so
+			// the web interface sits flush against the window edges. Resizing
+			// is handled by the interface (see startResize).
+			return 0
+		}
+	}
+	result, _, _ := procCallWindowProcW.Call(previousWndProc, hwnd, message, wparam, lparam)
+	return result
 }
 
 // applyWindowIcon sets the icon embedded in the executable (see
@@ -138,7 +183,7 @@ func applyWindowIcon(hwnd uintptr) {
 	procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, icon)
 }
 
-func (w *windowController) handleAction(action string) {
+func (w *windowController) handleAction(action, edge string) {
 	switch action {
 	case "minimize":
 		if w.hwnd != 0 {
@@ -159,6 +204,11 @@ func (w *windowController) handleAction(action string) {
 		}
 	case "drag":
 		w.startDrag()
+	case "resize":
+		// The interface reports which edge was grabbed; the window is resized
+		// here, because the web view covers the whole window and Windows
+		// therefore never sees the frame edges.
+		w.startResize(edge)
 	}
 }
 
@@ -265,6 +315,108 @@ func runDrag(env dragEnvironment) {
 			cursor = current
 			env.move(cursor.x-offsetX, cursor.y-offsetY)
 		}
+		env.sleep(time.Duration(dragFrameMillis) * time.Millisecond)
+	}
+}
+
+// startResize resizes the window while the left button is held on an edge. The
+// web view covers the whole window, so Windows cannot do this on its own: the
+// interface reports the grabbed edge and the window is resized here.
+func (w *windowController) startResize(edge string) {
+	if w.hwnd == 0 || edge == "" || !w.resizing.CompareAndSwap(false, true) {
+		return
+	}
+	hwnd := w.hwnd
+	go func() {
+		defer w.resizing.Store(false)
+		runResize(edge, resizeEnvironment{
+			buttonDown: func() bool {
+				pressed, _, _ := procGetAsyncKeyState.Call(vkLeftButton)
+				return pressed&0x8000 != 0
+			},
+			cursor: cursorPosition,
+			bounds: func() (winRect, bool) { return windowBounds(hwnd) },
+			move: func(left, top, width, height int32) {
+				procSetWindowPos.Call(
+					hwnd,
+					0,
+					uintptr(left),
+					uintptr(top),
+					uintptr(width),
+					uintptr(height),
+					swpNoZOrder|swpNoActivate,
+				)
+			},
+			sleep: func(duration time.Duration) { time.Sleep(duration) },
+		})
+	}()
+}
+
+// resizeEnvironment collects the platform calls used by the resize loop so the
+// logic can be unit tested without a real mouse.
+type resizeEnvironment struct {
+	buttonDown func() bool
+	cursor     func() (winPoint, bool)
+	bounds     func() (winRect, bool)
+	move       func(left, top, width, height int32)
+	sleep      func(time.Duration)
+}
+
+// runResize follows the cursor with the grabbed edge until the button is
+// released. Every frame is measured from the position where the drag started,
+// so rounding errors cannot accumulate.
+func runResize(edge string, env resizeEnvironment) {
+	start, ok := env.bounds()
+	if !ok {
+		return
+	}
+	cursor, ok := env.cursor()
+	if !ok {
+		return
+	}
+
+	for {
+		if !env.buttonDown() {
+			return
+		}
+		current, ok := env.cursor()
+		if !ok {
+			return
+		}
+		left, top := start.left, start.top
+		right, bottom := start.right, start.bottom
+		deltaX := current.x - cursor.x
+		deltaY := current.y - cursor.y
+
+		if strings.Contains(edge, "left") {
+			left += deltaX
+		}
+		if strings.Contains(edge, "right") {
+			right += deltaX
+		}
+		if strings.Contains(edge, "top") {
+			top += deltaY
+		}
+		if strings.Contains(edge, "bottom") {
+			bottom += deltaY
+		}
+
+		if right-left < minWindowWidth {
+			if strings.Contains(edge, "left") {
+				left = right - minWindowWidth
+			} else {
+				right = left + minWindowWidth
+			}
+		}
+		if bottom-top < minWindowHeight {
+			if strings.Contains(edge, "top") {
+				top = bottom - minWindowHeight
+			} else {
+				bottom = top + minWindowHeight
+			}
+		}
+
+		env.move(left, top, right-left, bottom-top)
 		env.sleep(time.Duration(dragFrameMillis) * time.Millisecond)
 	}
 }

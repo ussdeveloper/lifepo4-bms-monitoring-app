@@ -60,6 +60,9 @@ type Sample struct {
 	Balancer          *bool     `json:"balancer,omitempty"`
 	ProblemCode       *uint32   `json:"problemCode,omitempty"`
 	Timestamp         time.Time `json:"timestamp"`
+	// EtaS is the estimated seconds until the battery is full (while charging)
+	// or empty (while discharging); zero means the estimate is not available.
+	EtaS float64 `json:"etaS,omitempty"`
 }
 
 func boolPtr(value bool) *bool        { return &value }
