@@ -1,6 +1,7 @@
 # Build output, caches and local data
 dist/
 build/
+/*.exe
 *.spec
 __pycache__/
 *.pyc
