@@ -368,9 +368,9 @@ class ProtocolTests(unittest.TestCase):
         )
         set_language("en")
 
-        line = format_found_line("HS030902AB26170219", "4E:DF:C5:14:DD:67", -93)
-        self.assertIn("HS030902AB26170219", line)
-        self.assertIn("4E:DF:C5:14:DD:67", line)
+        line = format_found_line("HS000000AA00000000", "11:22:33:44:55:66", -93)
+        self.assertIn("HS000000AA00000000", line)
+        self.assertIn("11:22:33:44:55:66", line)
         self.assertIn("-93 dBm", line)
 
     def test_message_catalogues_share_keys_and_placeholders(self) -> None:

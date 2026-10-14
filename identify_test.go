@@ -10,7 +10,7 @@ import (
 
 func TestIsBatteryName(t *testing.T) {
 	cases := map[string]bool{
-		"HS030902AB26170219":          true,
+		"HS000000AA00000000":          true,
 		"hs0309":                      true,
 		"Humsienk-BMS":                true,
 		"ECO-WORTHY 12V":              true,
@@ -21,7 +21,7 @@ func TestIsBatteryName(t *testing.T) {
 		"FnR 6ATAG72R":                false,
 		"soundcore Q20i_BLE":          false,
 		"HLK-LD2450_3059":             false,
-		"Bluetooth 48:49:49:d8:df:2e": false,
+		"Bluetooth AA:BB:CC:DD:EE:FF": false,
 	}
 	for name, want := range cases {
 		if got := isBatteryName(name); got != want {
@@ -31,16 +31,16 @@ func TestIsBatteryName(t *testing.T) {
 }
 
 func TestIsSyntheticName(t *testing.T) {
-	if !isSyntheticName("Bluetooth 48:49:49:d8:df:2e") {
+	if !isSyntheticName("Bluetooth AA:BB:CC:DD:EE:FF") {
 		t.Error("Windows generated labels must be recognised")
 	}
 	if isSyntheticName("Bluetooth Speaker") {
 		t.Error("a friendly name must not be treated as generated")
 	}
-	if isSyntheticName("HS030902AB26170219") {
+	if isSyntheticName("HS000000AA00000000") {
 		t.Error("a battery name must not be treated as generated")
 	}
-	if got := displayName("Bluetooth 48:49:49:d8:df:2e"); got != "" {
+	if got := displayName("Bluetooth AA:BB:CC:DD:EE:FF"); got != "" {
 		t.Errorf("generated names must not be displayed, got %q", got)
 	}
 	if got := displayName(" HS0309 "); got != "HS0309" {

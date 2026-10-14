@@ -6,7 +6,7 @@ listed below and validates every reply before it is decoded.
 ## HS03 / HiLink
 
 Used by Humsienk packs and many rebranded 4S–8S batteries (for example
-`HS030902AB26170219`, model `BMC-04S001`).
+`HS000000AA00000000`, model `BMC-04S001`).
 
 | Item | Value |
 |---|---|

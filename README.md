@@ -15,6 +15,9 @@ read request.
 * Command line tool: Python TUI for quick checks and reports (`cli/`)
 * Battery data and history are stored per user in `%APPDATA%\LiFePO4BMSMonitor`
 
+Battery serial numbers, Bluetooth addresses and the Windows user name are masked
+in the screenshots, and the JSON examples below use placeholder values.
+
 ![Settings](docs/screenshots/settings.png)
 
 ## Supported batteries
@@ -107,7 +110,7 @@ How the interface behaves:
   the scanner sees together with its state (`queued`, `reading`, `no BMS`,
   `no answer`) and signal strength — so it is obvious that the scan works and
   what is around. Devices without an advertised name are shown the way Windows
-  shows them, for example `Bluetooth 80:2b:f9:d0:d8:e2`.
+  shows them, for example `Bluetooth AA:BB:CC:DD:EE:FF`.
 * The window has its own title bar (drag anywhere on it), a language switch and
   a status bar showing scan state, device counts, history size and version.
 * **Check every device** re-probes all visible devices, including the ones that
@@ -147,8 +150,8 @@ so automations keep working with the last known state:
   "count": 1,
   "batteries": [
     {
-      "addr": "4E:DF:C5:14:DD:67",
-      "name": "HS030902AB26170219",
+      "addr": "11:22:33:44:55:66",
+      "name": "HS000000AA00000000",
       "model": "BMC-04S001",
       "brand": "HiLink",
       "protocol": "HS03",
@@ -173,7 +176,7 @@ every reading to `<prefix>/<mac>/state` as JSON:
 
 ```json
 {
-  "address": "4E:DF:C5:14:DD:67", "name": "HS030902AB26170219",
+  "address": "11:22:33:44:55:66", "name": "HS000000AA00000000",
   "voltage": 13.45, "current": 10.04, "soc": 77, "remaining_ah": 242.57,
   "cell_min_v": 3.362, "cell_max_v": 3.363, "cell_delta_mv": 4,
   "temp_min_c": 20, "temp_max_c": 26, "charging": true, "discharging": true
@@ -202,7 +205,7 @@ Everything is kept in the user profile, next to each other:
 ├── settings.json                refresh interval, read API and MQTT configuration
 ├── devices.json                 batteries (with their last reading) + rejected devices
 └── history\
-    └── 4E-DF-C5-14-DD-67.csv    one row per reading (every 5 s while monitoring)
+    └── 11-22-33-44-55-66.csv    one row per reading (every 5 s while monitoring)
 ```
 
 `devices.json` makes the second start instant: known batteries are listed

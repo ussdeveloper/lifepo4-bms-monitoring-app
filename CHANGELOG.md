@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alphabetically by name (then address) instead of by signal strength, which
   made the rows jump while scanning.
 * Devices without an advertised name are labelled the way Windows labels them
-  (`Bluetooth 80:2b:f9:d0:d8:e2`) instead of showing the bare address.
+  (`Bluetooth AA:BB:CC:DD:EE:FF`) instead of showing the bare address.
 * Only the list scrolls; it reaches down to the status bar and the inner device
   list no longer adds a second scrollbar.
 * The state of charge ring shows the percentage and its caption inside the
@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a softer colour, so icons and labels line up.
 * Battery rows use a light elevation (small ambient shadow plus a bright inner
   edge) instead of a heavy shadow below the row.
+* Battery serial numbers, Bluetooth addresses and the Windows user name are
+  masked in the screenshots, and the JSON examples use placeholder values.
 
 ### Added
 

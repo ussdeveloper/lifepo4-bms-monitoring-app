@@ -570,7 +570,7 @@ function cardSignature(batteries) {
 }
 
 // displayLabel is what the interface shows for a device: its name when it has
-// one, otherwise the label Windows uses itself ("Bluetooth 80:2b:f9:d0:d8:e2").
+// one, otherwise the label Windows uses itself ("Bluetooth AA:BB:CC:DD:EE:FF").
 function displayLabel(device) {
   const name = String(device.name || "").trim();
   if (name) return name;

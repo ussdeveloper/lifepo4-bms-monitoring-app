@@ -11,8 +11,8 @@ import (
 
 func testBattery() DeviceInfo {
 	return DeviceInfo{
-		Address:  "4E:DF:C5:14:DD:67",
-		Name:     "HS030902AB26170219",
+		Address:  "11:22:33:44:55:66",
+		Name:     "HS000000AA00000000",
 		Model:    "BMC-04S001",
 		Brand:    "HiLink",
 		Protocol: "HS03",
@@ -57,7 +57,7 @@ func TestStoreKeepsKnownBatteries(t *testing.T) {
 
 	// A new store instance must read the file back.
 	reopened := NewStore(directory)
-	if known := reopened.Known(); len(known) != 1 || known[0].Name != "HS030902AB26170219" {
+	if known := reopened.Known(); len(known) != 1 || known[0].Name != "HS000000AA00000000" {
 		t.Fatalf("saved devices were not restored: %+v", known)
 	}
 	if _, err := os.Stat(filepath.Join(directory, "devices.json")); err != nil {
@@ -98,7 +98,7 @@ func TestStoreWritesSampleHistory(t *testing.T) {
 		}
 	}
 
-	path := filepath.Join(directory, "history", "4E-DF-C5-14-DD-67.csv")
+	path := filepath.Join(directory, "history", "11-22-33-44-55-66.csv")
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("history file missing: %v", err)
@@ -146,7 +146,7 @@ func TestStoreWritesSampleHistory(t *testing.T) {
 }
 
 func TestHistoryFileNameIsSafe(t *testing.T) {
-	if got := historyFileName("4E:DF:C5:14:DD:67"); got != "4E-DF-C5-14-DD-67" {
+	if got := historyFileName("11:22:33:44:55:66"); got != "11-22-33-44-55-66" {
 		t.Errorf("got %q", got)
 	}
 	if got := historyFileName(""); got != "unknown" {

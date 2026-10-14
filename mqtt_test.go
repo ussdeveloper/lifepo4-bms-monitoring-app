@@ -12,8 +12,8 @@ import (
 func sampleBattery() storeDevice {
 	soh := 100
 	return storeDevice{
-		Address:  "4E:DF:C5:14:DD:67",
-		Name:     "HS030902AB26170219",
+		Address:  "11:22:33:44:55:66",
+		Name:     "HS000000AA00000000",
 		Model:    "BMC-04S001",
 		Brand:    "HiLink",
 		Protocol: "HS03",
@@ -39,7 +39,7 @@ func sampleBattery() storeDevice {
 }
 
 func TestMQTTSlug(t *testing.T) {
-	if got := mqttSlug("4E:DF:C5:14:DD:67"); got != "4edfc514dd67" {
+	if got := mqttSlug("11:22:33:44:55:66"); got != "112233445566" {
 		t.Errorf("slug: got %q", got)
 	}
 }
@@ -79,7 +79,7 @@ func TestBuildStatePayload(t *testing.T) {
 	if payload["charging"] != true || payload["discharging"] != true || payload["balancing"] != false {
 		t.Errorf("boolean flags wrong: %v %v %v", payload["charging"], payload["discharging"], payload["balancing"])
 	}
-	if payload["address"] != "4E:DF:C5:14:DD:67" || payload["model"] != "BMC-04S001" {
+	if payload["address"] != "11:22:33:44:55:66" || payload["model"] != "BMC-04S001" {
 		t.Errorf("metadata missing: %v / %v", payload["address"], payload["model"])
 	}
 }
@@ -104,7 +104,7 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 		t.Fatalf("expected %d discovery messages, got %d", len(discoveryEntities), len(payloads))
 	}
 
-	socTopic := "homeassistant/sensor/lifepo4bms_4edfc514dd67/soc/config"
+	socTopic := "homeassistant/sensor/lifepo4bms_112233445566/soc/config"
 	raw, ok := payloads[socTopic]
 	if !ok {
 		t.Fatalf("missing discovery topic %s", socTopic)
@@ -113,10 +113,10 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 	if err := json.Unmarshal(raw, &message); err != nil {
 		t.Fatalf("discovery payload is not valid JSON: %v", err)
 	}
-	if message["unique_id"] != "lifepo4bms_4edfc514dd67_soc" {
+	if message["unique_id"] != "lifepo4bms_112233445566_soc" {
 		t.Errorf("unique_id: %v", message["unique_id"])
 	}
-	if message["state_topic"] != "lifepo4bms/4edfc514dd67/state" {
+	if message["state_topic"] != "lifepo4bms/112233445566/state" {
 		t.Errorf("state_topic: %v", message["state_topic"])
 	}
 	if message["availability_topic"] != "lifepo4bms/status" {
@@ -132,11 +132,11 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 	if !ok {
 		t.Fatal("device block missing")
 	}
-	if device["name"] != "HS030902AB26170219" || device["model"] != "BMC-04S001" || device["manufacturer"] != "HiLink" {
+	if device["name"] != "HS000000AA00000000" || device["model"] != "BMC-04S001" || device["manufacturer"] != "HiLink" {
 		t.Errorf("device block: %+v", device)
 	}
 	identifiers, ok := device["identifiers"].([]any)
-	if !ok || len(identifiers) != 1 || identifiers[0] != "lifepo4bms_4edfc514dd67" {
+	if !ok || len(identifiers) != 1 || identifiers[0] != "lifepo4bms_112233445566" {
 		t.Errorf("device identifiers: %+v", device["identifiers"])
 	}
 }

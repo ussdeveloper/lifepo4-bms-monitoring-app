@@ -199,7 +199,7 @@ func isBatteryName(name string) bool {
 }
 
 // isSyntheticName reports whether Windows invented the label because the device
-// did not advertise a name (for example "Bluetooth 48:49:49:d8:df:2e").
+// did not advertise a name (for example "Bluetooth AA:BB:CC:DD:EE:FF").
 func isSyntheticName(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
 	if !strings.HasPrefix(lower, "bluetooth ") {
