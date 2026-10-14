@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/jchv/go-webview2"
@@ -35,6 +36,7 @@ func main() {
 	defer logPanic("main")
 
 	portFlag := flag.Int("port", 0, "UI server port (0 = free port chosen automatically)")
+	listenFlag := flag.String("listen", "127.0.0.1", "interface address for the UI and the read API: 127.0.0.1 (this computer), 0.0.0.0 (the local network) or one address")
 	noWindow := flag.Bool("no-window", false, "run the UI server only, without the desktop window")
 	intervalFlag := flag.Float64("interval", 5, "how often battery data is refreshed, in seconds")
 	langFlag := flag.String("lang", "en", "default interface language: en or pl")
@@ -69,14 +71,19 @@ func main() {
 	go session.StartAutoSelect(ctx)
 	window := &windowController{}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *portFlag))
+	listener, err := net.Listen("tcp", net.JoinHostPort(listenAddress(*listenFlag), strconv.Itoa(*portFlag)))
 	if err != nil {
 		log.Fatalf("cannot start the UI server: %v", err)
 	}
-	url := "http://" + listener.Addr().String() + "/"
+	port := listener.Addr().(*net.TCPAddr).Port
+	// The window always talks to this computer; other computers (if the
+	// interface was opened to the network) read the state only.
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 	server := NewServer(hub, session, window, settings, store, publisher, serverConfig{
 		Language: *langFlag,
 		Version:  appVersion,
+		Listen:   listenAddress(*listenFlag),
+		Network:  networkURLs(*listenFlag, port),
 	})
 	go func() {
 		if err := http.Serve(listener, server.Handler()); err != nil {
@@ -84,6 +91,9 @@ func main() {
 		}
 	}()
 	log.Printf("interface available at %s (refresh every %s)", url, settings.Interval())
+	for _, address := range server.config.Network {
+		log.Printf("other computers can read http://%s/api/batteries (interface: http://%s/)", address, address)
+	}
 
 	if *noWindow {
 		<-ctx.Done()

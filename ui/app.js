@@ -20,6 +20,7 @@ const STRINGS = {
     "grid.title": "Detected batteries",
     "tabs.batteries": "Batteries",
     "tabs.devices": "Bluetooth devices",
+    "remote.note": "read-only · another computer monitors this battery",
     "grid.deepscan": "Check every device",
     "grid.refresh": "data refreshed every {n} s",
     "grid.progress": "waiting: {pending} · no BMS: {rejected}",
@@ -130,7 +131,9 @@ const STRINGS = {
     "settings.saved": "saved",
     "settings.saving": "saving…",
     "settings.apiDisabled": "The read API is disabled.",
+    "settings.apiLocalOnly": "this computer only (start with -listen lan to share it)",
     "settings.apiUrl": "GET {url} (add ?addr=AA:BB:… for a single battery)",
+    "settings.apiNetwork": "other computers: {url}",
     "charge.charging": "charging",
     "charge.discharging": "discharging",
     "charge.idle": "idle (no current)",
@@ -167,6 +170,7 @@ const STRINGS = {
     "grid.title": "Wykryte akumulatory",
     "tabs.batteries": "Akumulatory",
     "tabs.devices": "Urządzenia Bluetooth",
+    "remote.note": "tylko odczyt · akumulator monitoruje inny komputer",
     "grid.deepscan": "Sprawdź wszystkie urządzenia",
     "grid.refresh": "dane odświeżane co {n} s",
     "grid.progress": "w kolejce: {pending} · nie BMS: {rejected}",
@@ -276,7 +280,9 @@ const STRINGS = {
     "settings.saved": "zapisano",
     "settings.saving": "zapisuję…",
     "settings.apiDisabled": "API odczytu jest wyłączone.",
+    "settings.apiLocalOnly": "tylko ten komputer (uruchom z -listen lan, aby udostępnić)",
     "settings.apiUrl": "GET {url} (dodaj ?addr=AA:BB:… dla jednego akumulatora)",
+    "settings.apiNetwork": "inne komputery: {url}",
     "charge.charging": "ładowanie",
     "charge.discharging": "rozładowanie",
     "charge.idle": "bez prądu",
@@ -346,6 +352,7 @@ const el = {
   addState: document.getElementById("add-state"),
   releaseButton: document.getElementById("release-button"),
   releaseMinutes: document.getElementById("release-minutes"),
+  remoteNote: document.getElementById("remote-note"),
   radiosValue: document.getElementById("radios-value"),
   checkingCaption: document.getElementById("checking-caption"),
   scanStats: document.getElementById("scan-stats"),
@@ -772,7 +779,14 @@ function updateApiHint() {
     el.apiHint.textContent = t("settings.apiDisabled");
     return;
   }
-  el.apiHint.textContent = t("settings.apiUrl", { url: `${location.origin}/api/batteries` });
+  const network = ((state && state.config && state.config.network) || []).map(
+    (address) => `http://${address}/api/batteries`,
+  );
+  let hint = t("settings.apiUrl", { url: `${location.origin}/api/batteries` });
+  hint += network.length
+    ? ` · ${t("settings.apiNetwork", { url: network.join(", ") })}`
+    : ` · ${t("settings.apiLocalOnly")}`;
+  el.apiHint.textContent = hint;
 }
 
 async function saveSettings() {
@@ -967,6 +981,18 @@ function renderCards() {
 
 /* --- batteries / Bluetooth devices tabs --- */
 
+// isRemote is true when this interface was opened from another computer: it
+// follows the state of the computer that owns the battery link and cannot
+// change anything (that computer refuses the calls anyway).
+function isRemote() {
+  return Boolean(state && state.config && state.config.remote);
+}
+
+function applyRemote() {
+  const remote = isRemote();
+  document.body.classList.toggle("remote", remote);
+  el.remoteNote.hidden = !remote;
+}
 // Which of the two lists the left panel shows. Until the user picks a tab an
 // empty battery list falls back to the device list, which is the only
 // interesting view while nothing has been found.
@@ -1015,7 +1041,7 @@ function wireCards() {
 }
 
 function chooseDevice(address) {
-  if (!address || address === lastRequested) return;
+  if (!address || address === lastRequested || isRemote()) return;
   lastRequested = address;
   fetch("/api/select", {
     method: "POST",
@@ -1374,6 +1400,7 @@ function renderChrome() {
   el.statusHistory.title = state.config.dataDir || "";
   el.statusVersion.textContent = `v${state.config.version}`;
   el.statusVersion.title = `${state.config.platform} · ${state.config.dataDir || ""}`;
+  applyRemote();
 
   const mqttSettings = (state.config.settings && state.config.settings.mqtt) || null;
   if (mqttSettings && mqttSettings.enabled) {

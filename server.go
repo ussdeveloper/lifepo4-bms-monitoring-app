@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,6 +20,10 @@ var uiFiles embed.FS
 type serverConfig struct {
 	Language string
 	Version  string
+	// Listen is the address the interface was bound to and Network lists the
+	// URLs other computers can use (empty when only this computer is served).
+	Listen  string
+	Network []string
 }
 
 // Server serves the interface (files from ui/) and the JSON API used by the
@@ -60,7 +66,55 @@ func NewServer(hub *Hub, session *Session, window *windowController, settings *S
 	return server
 }
 
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler { return s.gate(s.mux) }
+
+// gate keeps the interface read-only for other computers: only the JSON state
+// and the read API answer them, everything that changes something (and the
+// settings, which carry the broker password) stays on this machine.
+func (s *Server) gate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !remoteAllowed(request.RemoteAddr, request.Method, request.URL.Path) {
+			http.Error(writer, "read only: the computer that monitors the battery owns this interface", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
+}
+
+// isLoopbackAddress reports whether a "host:port" remote address is this
+// computer itself.
+func isLoopbackAddress(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		host = remote
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return true
+	}
+	address := net.ParseIP(host)
+	if address == nil {
+		return false
+	}
+	return address.IsLoopback()
+}
+
+// remoteAllowed decides what a client from another computer may do.
+func remoteAllowed(remote, method, path string) bool {
+	if isLoopbackAddress(remote) {
+		return true
+	}
+	if method != http.MethodGet && method != http.MethodHead {
+		return false
+	}
+	switch path {
+	case "/api/state", "/api/batteries":
+		return true
+	}
+	// The interface itself is served (it reads the state above); every other
+	// API call is local only.
+	return !strings.HasPrefix(path, "/api/")
+}
 
 type configResponse struct {
 	Version       string         `json:"version"`
@@ -71,6 +125,9 @@ type configResponse struct {
 	MQTTConnected bool           `json:"mqttConnected"`
 	Radios        []radioSummary `json:"radios"`
 	Settings      settingsView   `json:"settings"`
+	Remote        bool           `json:"remote"`
+	Listen        string         `json:"listen"`
+	Network       []string       `json:"network"`
 }
 
 type stateResponse struct {
@@ -79,10 +136,17 @@ type stateResponse struct {
 	Config  configResponse `json:"config"`
 }
 
-func (s *Server) handleState(writer http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleState(writer http.ResponseWriter, request *http.Request) {
 	language := strings.ToLower(strings.TrimSpace(s.config.Language))
 	if language != "pl" {
 		language = "en"
+	}
+	settings := s.settings.View()
+	remote := !isLoopbackAddress(request.RemoteAddr)
+	if remote {
+		// Another computer reads the state; it has no business seeing the
+		// broker password, and it cannot change anything anyway.
+		settings.MQTT.Password = ""
 	}
 	payload := stateResponse{
 		Hub:     s.hub.State(),
@@ -95,7 +159,10 @@ func (s *Server) handleState(writer http.ResponseWriter, _ *http.Request) {
 			Platform:      platformLabel(),
 			MQTTConnected: s.publisher.Connected(),
 			Radios:        s.hub.Radios(),
-			Settings:      s.settings.View(),
+			Settings:      settings,
+			Remote:        remote,
+			Listen:        s.config.Listen,
+			Network:       s.config.Network,
 		},
 	}
 	writeJSON(writer, payload)
@@ -259,6 +326,63 @@ func (s *Server) handleWindow(writer http.ResponseWriter, request *http.Request)
 // reports coming from release builds.
 func platformLabel() string {
 	return runtime.GOOS + "/" + runtime.GOARCH
+}
+
+// listenAddress turns the -listen value into something net.Listen understands.
+func listenAddress(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "local", "localhost", "loopback":
+		return "127.0.0.1"
+	case "lan", "all", "any", "*", "network":
+		return "0.0.0.0"
+	}
+	return strings.TrimSpace(value)
+}
+
+// networkURLs lists the addresses other computers can use, so the log always
+// says what to type on the other machine.
+func networkURLs(listen string, port int) []string {
+	addresses := []string{}
+	add := func(address string) {
+		for _, known := range addresses {
+			if known == address {
+				return
+			}
+		}
+		addresses = append(addresses, address)
+	}
+	listen = listenAddress(listen)
+	if listen != "0.0.0.0" && listen != "::" {
+		if !isLoopbackAddress(listen) {
+			add(net.JoinHostPort(listen, strconv.Itoa(port)))
+		}
+		return addresses
+	}
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return addresses
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		assigned, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, entry := range assigned {
+			ipnet, ok := entry.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			address := ipnet.IP.To4()
+			if address == nil || address.IsLoopback() || address.IsLinkLocalUnicast() {
+				continue
+			}
+			add(net.JoinHostPort(address.String(), strconv.Itoa(port)))
+		}
+	}
+	return addresses
 }
 
 func writeJSON(writer http.ResponseWriter, payload any) {

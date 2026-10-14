@@ -448,9 +448,14 @@ main {
   gap: 10px;
 }
 
+/* Another computer reading this interface: the data is live, the controls
+   belong to the computer that owns the battery link. */
+body.remote .head-actions,
+body.remote #settings-toggle,
+body.remote #release-button { display: none; }
+
 /* Shown in the batteries tab while no battery has been found yet. */
-.list-empty {
-  margin: 4px 6px 0;
+.list-empty {  margin: 4px 6px 0;
   padding: 16px;
   border-radius: 14px;
   border: 1px dashed rgba(0, 26, 77, 0.14);

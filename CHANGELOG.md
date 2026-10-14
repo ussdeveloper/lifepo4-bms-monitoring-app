@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   addresses added by hand), **Bluetooth devices** lists everything the scan sees,
   each with a count. Before the user picks a tab an empty battery list falls back
   to the device list.
+* `-listen lan` (or a single address) serves the interface and the read API to
+  the local network, so a second computer can watch the battery over HTTP while
+  this one keeps the Bluetooth link. Other computers are read-only: they get
+  `/api/state` (without the broker password) and `/api/batteries`, and every
+  call that changes something answers `403`.
 * **Add by MAC**: a device can be listed by hand (button next to *Check every
   device*), which is how a battery reachable only through another Bluetooth radio
   is monitored. Hand added addresses are remembered, probed with the highest

@@ -87,6 +87,7 @@ from a terminal:
 
 | Option | Meaning |
 |---|---|
+| `-listen lan` | serve the interface and the read API to the local network (default `127.0.0.1`, a single address like `-listen 10.3.0.148` also works) |
 | `-port 8811` | fixed port for the local interface (default: free port) |
 | `-interval 5` | default refresh interval, used until settings.json exists |
 | `-lang pl` | start the interface in Polish (English is the default) |
@@ -227,6 +228,34 @@ so automations keep working with the last known state:
 Other endpoints: `/api/state` (full application state) and `/api/settings`
 (GET or POST a partial settings patch). Add `?addr=<address>` to `/api/batteries`
 to query a single battery.
+
+### Reading the battery from another computer
+
+A BMS serves **one connection at a time** and stops advertising while it is
+connected, so two computers cannot monitor the same battery and a second
+computer often cannot even see it. The way around that is to let one computer
+monitor and let the others **read over the network**:
+
+```powershell
+# on the computer that has the battery link
+.\dist\lifepo4-bms-monitor.exe -listen lan          # or -listen 10.3.0.148
+
+# on the other computer
+http://10.3.0.148:8822/                             # the interface, live, read-only
+http://10.3.0.148:8822/api/batteries                # the same data as JSON
+```
+
+The log lists the addresses to use, and the settings panel shows them next to
+*Read API*. Windows asks once for firewall permission; if it does not, allow
+TCP 8822 on the private profile (`New-NetFirewallRule -DisplayName "LiFePO4 BMS
+Monitor" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8822 -Profile
+Private` in an elevated PowerShell).
+
+Other computers are **read-only** by design: they may fetch `/api/state` (with
+the broker password removed) and `/api/batteries`, and open the interface, but
+the settings, the battery selection, *Add by MAC*, *Release* and the window
+actions are refused with `403`. Only `127.0.0.1` keeps full access, so the
+monitoring computer stays in charge of the battery and of the configuration.
 
 `/api/state` also carries `session.power`: the readings of the last ten minutes
 (`{ "t": <unix ms>, "w": <watts> }`) that the charging power graph in the panel
