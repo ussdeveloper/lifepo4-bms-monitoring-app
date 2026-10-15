@@ -28,6 +28,9 @@ func TestSettingsDefaultsAndLimits(t *testing.T) {
 	if settings.Console() {
 		t.Error("the console window must be off by default")
 	}
+	if !settings.StoreSamples() {
+		t.Error("the history database must be on by default")
+	}
 
 	// The interval is clamped to the supported range.
 	interval := 0.1
@@ -128,6 +131,30 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(directory, "settings.json")); err != nil {
 		t.Errorf("settings.json missing: %v", err)
+	}
+}
+
+// A settings file written before the history database existed has no key for
+// it, so loading must not leave the feature switched off.
+func TestSettingsMigratesOldVersions(t *testing.T) {
+	directory := t.TempDir()
+	old := `{"version":1,"intervalS":7,"apiEnabled":true,"mqtt":{"port":1883,"topicPrefix":"lifepo4bms","discoveryPrefix":"homeassistant"}}`
+	if err := os.WriteFile(filepath.Join(directory, "settings.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings := NewSettings(directory, 5*time.Second)
+	if got := settings.Interval(); got != 7*time.Second {
+		t.Errorf("interval from the old file: got %s, want 7s", got)
+	}
+	if !settings.StoreSamples() {
+		t.Error("an older settings file must end up with the history database switched on")
+	}
+	// And the choice survives the first save.
+	interval := 9.0
+	settings.Update(settingsPatch{IntervalS: &interval})
+	reloaded := NewSettings(directory, 5*time.Second)
+	if !reloaded.StoreSamples() {
+		t.Error("the history database must stay on after saving")
 	}
 }
 

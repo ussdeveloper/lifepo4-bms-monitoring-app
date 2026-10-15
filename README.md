@@ -15,6 +15,7 @@ read request.
 * Title bar: drag, resize from every edge, and an *unplug* button that releases the battery to another device for the configured number of minutes
 * Detail panel: state of charge, voltage, current, charging power with a graph of the last ten minutes, estimated time to full (or empty), cells, temperatures and MOSFET state
 * Cell balance: a band on the cell bars shows the window every cell should stay in, cells outside it are highlighted, and the spread is explained — including why a spread in the flat part of the curve is a *phantom* imbalance (see below)
+* Cell history: every reading (all cell voltages, current, temperatures) is stored in a SQLite file in the application data directory and drawn as a *Cells over time* chart with 1 h / 6 h / 24 h / 7 d ranges; the file is downloaded as a backup or merged back in from the settings panel
 * Settings panel: refresh interval, release time, Bluetooth radios, read API, MQTT with Home Assistant discovery
 * Command line tool: Python TUI for quick checks and reports (`cli/`)
 * Battery data and history are stored per user in `%APPDATA%\LiFePO4BMSMonitor`
@@ -142,6 +143,7 @@ The gear icon in the title bar opens the settings panel. Everything is stored in
 |---|---|
 | Refresh interval | slider from 2 s to 30 s, plus a free value (1 s … 1 h) in the number field |
 | Release time | how long the *unplug* button hands the battery to another device (1 … 120 minutes) |
+| Cell history database | store every reading with all cell voltages in SQLite, with a size/count line, *Download backup* and *Import backup* below it |
 | Console window | show a console window with the log while the application runs (off by default; the log file is written either way) |
 | Bluetooth radios | how many radios Windows reports (the scan itself uses the default one) |
 | Read API | switch for the public read endpoint (see below) |
@@ -311,6 +313,19 @@ is highlighted in amber, and a line under the bars says what the spread means:
 | 3.10 … 3.40 V per cell (the flat part) | ±60 mV | mostly *phantom*: the curve is nearly flat, so tens of millivolts there are a difference in readings, not in capacity. It usually disappears on its own and there is nothing to fix |
 | below 3.10 V per cell (bottom of the discharge) | ±40 mV | real: the cell that is lowest here gives its energy first |
 
+The window then grows with the battery itself, because both reasons come from
+physics rather than from taste:
+
+* **large cells** — a balancer moves a fixed trickle of current (tens of
+  milliamps), so pulling a high cell down takes hours in a 314 Ah cell where a
+  100 Ah cell needs minutes: +8 mV from 280 Ah, +4 mV from 150 Ah;
+* **a new pack** — the cells are still forming and settle over the first cycles,
+  so a spread there is expected to shrink on its own: +15 mV up to 5 cycles,
+  +8 mV up to 20 cycles.
+
+The panel prints the arithmetic (`±53 mV instead of ±30, 23 mV more for 0 cycles,
+314 Ah cells`) so the number never looks arbitrary.
+
 The window follows the pack, not an absolute voltage: it is centred on the
 average cell, because balance is about cells being equal to each other. A wide
 spread in the flat part is reported as a phantom imbalance with the weakest cell
@@ -326,9 +341,42 @@ Everything is kept in the user profile, next to each other:
 %APPDATA%\LiFePO4BMSMonitor\
 ├── settings.json                refresh interval, read API and MQTT configuration
 ├── devices.json                 batteries (with their last reading) + rejected devices
+├── history.db                   SQLite: every reading with all cell voltages
 └── history\
     └── 11-22-33-44-55-66.csv    one row per reading (every 5 s while monitoring)
 ```
+
+### The history database
+
+`history.db` is an ordinary SQLite file, so it can be opened with any SQLite
+tool. Two tables carry the data:
+
+```sql
+samples(id, address, ts, voltage_v, current_a, soc, soh, remaining_ah, design_ah,
+        cycles, cell_min_mv, cell_max_mv, cell_delta_mv, temp_min_c, temp_max_c,
+        balance_spread_mv, balance_state)   -- ts is a unix timestamp, unique per battery
+cells(sample_id, cell, mv)                  -- one row per cell of that reading
+```
+
+A reading every 5 s is about 17 000 rows a day, which SQLite holds without
+complaint for years. Readings are written in batches (every 15 s), and the
+unique key on `(address, ts)` means a reading can never be stored twice — which
+is what makes importing the same backup again harmless.
+
+The chart in the detail panel reads this file through
+`GET /api/cells/history?addr=<address>&minutes=<n>` (the response is thinned to
+at most a few hundred points, so a week of data still draws instantly). Other
+computers that read the interface may fetch this endpoint too.
+
+Backups are the file itself:
+
+| Action | What happens |
+|---|---|
+| *Download backup* (`GET /api/db/export`) | a consistent copy is written with SQLite's `VACUUM INTO` and sent as `lifepo4-bms-history-<date>.db` |
+| *Import backup* (`POST /api/db/import`, form field `file`) | the uploaded file is attached and merged: readings that are already here stay untouched, the rest is added, and the cell voltages come along |
+
+Both are refused for clients from other computers, like every endpoint that
+changes something.
 
 `devices.json` makes the second start instant: known batteries are listed
 immediately and devices that were already rejected are not probed again.

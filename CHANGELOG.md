@@ -55,6 +55,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   imbalance). Cells outside the window are highlighted, the weakest cell is
   named, and the same values go to MQTT as `balance_mv` / `balance_state` with a
   Home Assistant sensor.
+* The balance window follows the battery: large cells need longer to move with a
+  fixed balancer current (+8 mV from 280 Ah, +4 mV from 150 Ah) and a pack that
+  is still forming settles over the first cycles (+15 mV up to 5 cycles, +8 mV up
+  to 20), so a brand new 314 Ah pack is judged against ±53 mV at the top of the
+  charge instead of ±30. The interface prints that arithmetic.
+* Cell history database: every reading, with all cell voltages, is stored in
+  `history.db` (SQLite) in the application data directory, written in batches and
+  keyed on (battery, timestamp) so a reading cannot be stored twice.
+* A *Cells over time* chart in the detail panel draws the cell voltages from that
+  database with 1 h / 6 h / 24 h / 7 d ranges, filled from the whole history.
+* Backups are the database file: *Download backup* sends a consistent copy
+  (`GET /api/db/export`) and *Import backup* merges one back in
+  (`POST /api/db/import`), adding only the readings that are not there yet, cell
+  voltages included. `GET /api/cells/history` serves the chart data.
+* The "Cell history database" setting switches the storing on and off (on by
+  default; a settings file from an older version is migrated).
 * Console window setting: the windowed application starts without a console
   (the build uses the Windows GUI subsystem) and the setting opens one with the
   log when it is wanted, live, without restarting. The log file is written

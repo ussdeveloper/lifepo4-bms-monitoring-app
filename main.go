@@ -69,12 +69,29 @@ func main() {
 	if settings.Console() {
 		applyConsoleSetting(true)
 	}
+	db := NewHistoryDB(store.Dir())
+	defer db.Close()
+	// Readings are queued and written in batches, so the storage never holds a
+	// reading loop back.
+	go func() {
+		flusher := time.NewTicker(historyFlushEvery)
+		defer flusher.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				db.Flush()
+				return
+			case <-flusher.C:
+				db.Flush()
+			}
+		}
+	}()
 	adapter := bluetooth.DefaultAdapter
 	hub := NewHub(adapter, store)
 	hub.Start(ctx)
 	publisher := newMQTTPublisher(settings, store, appVersion)
 	go publisher.Run(ctx)
-	session := NewSession(hub, store, settings, publisher)
+	session := NewSession(hub, store, settings, publisher, db)
 	go session.StartAutoSelect(ctx)
 	window := &windowController{}
 
@@ -86,7 +103,7 @@ func main() {
 	// The window always talks to this computer; other computers (if the
 	// interface was opened to the network) read the state only.
 	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
-	server := NewServer(hub, session, window, settings, store, publisher, serverConfig{
+	server := NewServer(hub, session, window, settings, store, publisher, db, serverConfig{
 		Language: *langFlag,
 		Version:  appVersion,
 		Listen:   listenAddress(*listenFlag),

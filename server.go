@@ -3,10 +3,14 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,11 +39,12 @@ type Server struct {
 	settings  *Settings
 	store     *Store
 	publisher *mqttPublisher
+	db        *HistoryDB
 	config    serverConfig
 	mux       *http.ServeMux
 }
 
-func NewServer(hub *Hub, session *Session, window *windowController, settings *Settings, store *Store, publisher *mqttPublisher, config serverConfig) *Server {
+func NewServer(hub *Hub, session *Session, window *windowController, settings *Settings, store *Store, publisher *mqttPublisher, db *HistoryDB, config serverConfig) *Server {
 	server := &Server{
 		hub:       hub,
 		session:   session,
@@ -47,6 +52,7 @@ func NewServer(hub *Hub, session *Session, window *windowController, settings *S
 		settings:  settings,
 		store:     store,
 		publisher: publisher,
+		db:        db,
 		config:    config,
 		mux:       http.NewServeMux(),
 	}
@@ -63,6 +69,9 @@ func NewServer(hub *Hub, session *Session, window *windowController, settings *S
 	server.mux.HandleFunc("/api/window", server.handleWindow)
 	server.mux.HandleFunc("/api/settings", server.handleSettings)
 	server.mux.HandleFunc("/api/batteries", server.handleBatteries)
+	server.mux.HandleFunc("/api/cells/history", server.handleCellHistory)
+	server.mux.HandleFunc("/api/db/export", server.handleDBExport)
+	server.mux.HandleFunc("/api/db/import", server.handleDBImport)
 	return server
 }
 
@@ -108,7 +117,7 @@ func remoteAllowed(remote, method, path string) bool {
 		return false
 	}
 	switch path {
-	case "/api/state", "/api/batteries":
+	case "/api/state", "/api/batteries", "/api/cells/history":
 		return true
 	}
 	// The interface itself is served (it reads the state above); every other
@@ -128,6 +137,7 @@ type configResponse struct {
 	Remote        bool           `json:"remote"`
 	Listen        string         `json:"listen"`
 	Network       []string       `json:"network"`
+	History       historyStats   `json:"history"`
 }
 
 type stateResponse struct {
@@ -163,6 +173,7 @@ func (s *Server) handleState(writer http.ResponseWriter, request *http.Request) 
 			Remote:        remote,
 			Listen:        s.config.Listen,
 			Network:       s.config.Network,
+			History:       s.db.Stats(),
 		},
 	}
 	writeJSON(writer, payload)
@@ -387,6 +398,107 @@ func networkURLs(listen string, port int) []string {
 		}
 	}
 	return addresses
+}
+
+// handleCellHistory returns the stored cell voltages of one battery, so the
+// interface (or anything else) can draw them over time.
+func (s *Server) handleCellHistory(writer http.ResponseWriter, request *http.Request) {
+	if s.db == nil || !s.db.Enabled() {
+		writeJSON(writer, map[string]any{"points": []cellSample{}, "enabled": false})
+		return
+	}
+	query := request.URL.Query()
+	address := strings.TrimSpace(query.Get("addr"))
+	if address == "" {
+		address = s.session.State().Address
+	}
+	minutes := 60
+	if value, err := strconv.Atoi(query.Get("minutes")); err == nil && value > 0 && value <= 60*24*90 {
+		minutes = value
+	}
+	until := time.Now()
+	series, err := s.db.CellSeries(cellSeriesRequest{
+		Address: address,
+		Since:   until.Add(-time.Duration(minutes) * time.Minute),
+		Until:   until,
+	})
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(writer, map[string]any{
+		"enabled": true,
+		"addr":    address,
+		"minutes": minutes,
+		"points":  series,
+	})
+}
+
+// handleDBExport sends the whole history database as a download, which is the
+// backup: it is an ordinary SQLite file.
+func (s *Server) handleDBExport(writer http.ResponseWriter, _ *http.Request) {
+	if s.db == nil || !s.db.Enabled() {
+		http.Error(writer, "the history database is not open", http.StatusServiceUnavailable)
+		return
+	}
+	temporary := filepath.Join(os.TempDir(), fmt.Sprintf("lifepo4-bms-history-%d.db", time.Now().UnixNano()))
+	defer os.Remove(temporary)
+	if err := s.db.Backup(temporary); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	file, err := os.Open(temporary)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	info, _ := file.Stat()
+	name := fmt.Sprintf("lifepo4-bms-history-%s.db", time.Now().Format("2006-01-02"))
+	writer.Header().Set("Content-Type", "application/octet-stream")
+	writer.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	if info != nil {
+		writer.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	_, _ = io.Copy(writer, file)
+}
+
+// handleDBImport merges an uploaded backup into the history: readings that are
+// already here stay as they are, the rest is added.
+func (s *Server) handleDBImport(writer http.ResponseWriter, request *http.Request) {
+	if s.db == nil || !s.db.Enabled() {
+		http.Error(writer, "the history database is not open", http.StatusServiceUnavailable)
+		return
+	}
+	file, _, err := request.FormFile("file")
+	if err != nil {
+		http.Error(writer, "no file in the request", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	temporary := filepath.Join(os.TempDir(), fmt.Sprintf("lifepo4-bms-import-%d.db", time.Now().UnixNano()))
+	defer os.Remove(temporary)
+	target, err := os.Create(temporary)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := io.Copy(target, file); err != nil {
+		target.Close()
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	target.Close()
+
+	added, err := s.db.Import(temporary)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("history import: %d new readings merged", added)
+	writeJSON(writer, map[string]any{"added": added, "stats": s.db.Stats()})
 }
 
 func writeJSON(writer http.ResponseWriter, payload any) {

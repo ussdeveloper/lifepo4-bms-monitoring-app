@@ -20,12 +20,13 @@ type Settings struct {
 }
 
 type settingsFile struct {
-	Version     int          `json:"version"`
-	IntervalS   float64      `json:"intervalS"`
-	ReleaseMins int          `json:"releaseMinutes"`
-	APIEnabled  bool         `json:"apiEnabled"`
-	Console     bool         `json:"console"`
-	MQTT        mqttSettings `json:"mqtt"`
+	Version      int          `json:"version"`
+	IntervalS    float64      `json:"intervalS"`
+	ReleaseMins  int          `json:"releaseMinutes"`
+	StoreSamples bool         `json:"storeSamples"`
+	APIEnabled   bool         `json:"apiEnabled"`
+	Console      bool         `json:"console"`
+	MQTT         mqttSettings `json:"mqtt"`
 }
 
 type mqttSettings struct {
@@ -53,10 +54,11 @@ const (
 
 func defaultSettings() settingsFile {
 	return settingsFile{
-		Version:     1,
-		IntervalS:   defaultIntervalS,
-		ReleaseMins: defaultReleaseMins,
-		APIEnabled:  true,
+		Version:      settingsVersion,
+		IntervalS:    defaultIntervalS,
+		ReleaseMins:  defaultReleaseMins,
+		StoreSamples: true,
+		APIEnabled:   true,
 		MQTT: mqttSettings{
 			Port:            1883,
 			TopicPrefix:     "lifepo4bms",
@@ -90,9 +92,18 @@ func NewSettings(directory string, fallbackInterval time.Duration) *Settings {
 	return settings
 }
 
+// settingsVersion is bumped when a new setting needs a default that differs
+// from the zero value of its field.
+const settingsVersion = 2
+
 func sanitizeSettings(value settingsFile) settingsFile {
 	defaults := defaultSettings()
-	value.Version = defaults.Version
+	// Files from before version 2 have no "storeSamples" key, so their zero
+	// value is not a choice: the history database starts switched on.
+	if value.Version < 2 {
+		value.StoreSamples = true
+	}
+	value.Version = settingsVersion
 	if value.IntervalS < minIntervalS || value.IntervalS > maxIntervalS {
 		value.IntervalS = defaults.IntervalS
 	}
@@ -172,6 +183,13 @@ func (s *Settings) Console() bool {
 	return s.value.Console
 }
 
+// StoreSamples reports whether every reading goes into the history database.
+func (s *Settings) StoreSamples() bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.value.StoreSamples
+}
+
 // MQTT returns a copy of the MQTT configuration.
 func (s *Settings) MQTT() mqttSettings {
 	s.mutex.RLock()
@@ -187,6 +205,7 @@ type settingsView struct {
 	ReleaseMins    int          `json:"releaseMinutes"`
 	MinReleaseMins int          `json:"minReleaseMinutes"`
 	MaxReleaseMins int          `json:"maxReleaseMinutes"`
+	StoreSamples   bool         `json:"storeSamples"`
 	APIEnabled     bool         `json:"apiEnabled"`
 	Console        bool         `json:"console"`
 	MQTT           mqttSettings `json:"mqtt"`
@@ -202,6 +221,7 @@ func (s *Settings) viewLocked() settingsView {
 		ReleaseMins:    s.value.ReleaseMins,
 		MinReleaseMins: minReleaseMins,
 		MaxReleaseMins: maxReleaseMins,
+		StoreSamples:   s.value.StoreSamples,
 		APIEnabled:     s.value.APIEnabled,
 		Console:        s.value.Console,
 		MQTT:           s.value.MQTT,
@@ -218,11 +238,12 @@ func (s *Settings) View() settingsView {
 // settingsPatch carries the fields a settings update may change. Pointers make
 // "not provided" distinguishable from "set to zero".
 type settingsPatch struct {
-	IntervalS   *float64      `json:"intervalS"`
-	ReleaseMins *int          `json:"releaseMinutes"`
-	APIEnabled  *bool         `json:"apiEnabled"`
-	Console     *bool         `json:"console"`
-	MQTT        *mqttSettings `json:"mqtt"`
+	IntervalS    *float64      `json:"intervalS"`
+	ReleaseMins  *int          `json:"releaseMinutes"`
+	StoreSamples *bool         `json:"storeSamples"`
+	APIEnabled   *bool         `json:"apiEnabled"`
+	Console      *bool         `json:"console"`
+	MQTT         *mqttSettings `json:"mqtt"`
 }
 
 // Update applies a patch, stores it and returns the resulting view together
@@ -246,6 +267,9 @@ func (s *Settings) Update(patch settingsPatch) (settingsView, time.Duration, tim
 	if patch.Console != nil {
 		s.value.Console = *patch.Console
 	}
+	if patch.StoreSamples != nil {
+		s.value.StoreSamples = *patch.StoreSamples
+	}
 	if patch.ReleaseMins != nil {
 		s.value.ReleaseMins = clampInt(*patch.ReleaseMins, minReleaseMins, maxReleaseMins)
 	}
@@ -261,10 +285,11 @@ func (s *Settings) Update(patch settingsPatch) (settingsView, time.Duration, tim
 			incoming.DiscoveryPrefix = s.value.MQTT.DiscoveryPrefix
 		}
 		s.value.MQTT = sanitizeSettings(settingsFile{
-			Version:     s.value.Version,
-			IntervalS:   s.value.IntervalS,
-			ReleaseMins: s.value.ReleaseMins,
-			MQTT:        incoming,
+			Version:      s.value.Version,
+			IntervalS:    s.value.IntervalS,
+			ReleaseMins:  s.value.ReleaseMins,
+			StoreSamples: s.value.StoreSamples,
+			MQTT:         incoming,
 		}).MQTT
 	}
 	after := time.Duration(s.value.IntervalS * float64(time.Second))

@@ -8,7 +8,7 @@ import (
 )
 
 func TestTakeoverIsReportedOnlyAfterAWorkingLink(t *testing.T) {
-	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil)
+	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil, nil)
 
 	// A battery that was never reached is simply retried; nothing is reported.
 	session.noteTakeover(false, 99)
@@ -30,7 +30,7 @@ func TestTakeoverIsReportedOnlyAfterAWorkingLink(t *testing.T) {
 }
 
 func TestReconnectClearsTheTakeoverNotice(t *testing.T) {
-	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil)
+	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil, nil)
 	session.noteTakeover(true, takeoverAttempts)
 	if !session.Takeover() {
 		t.Fatal("expected the takeover note")
@@ -44,7 +44,7 @@ func TestReconnectClearsTheTakeoverNotice(t *testing.T) {
 }
 
 func TestTakeoverSurvivesUntilTheBatteryIsBack(t *testing.T) {
-	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil)
+	session := NewSession(nil, nil, NewSettings("", 5*time.Second), nil, nil)
 	session.noteTakeover(true, takeoverAttempts)
 
 	// Monitoring keeps retrying: the state must say so instead of pretending

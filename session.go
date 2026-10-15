@@ -21,6 +21,9 @@ type Session struct {
 	store     *Store
 	settings  *Settings
 	publisher *mqttPublisher
+	// db is the long term history; readings are queued here and flushed in
+	// batches so a reading costs one transaction.
+	db *HistoryDB
 
 	mu       sync.Mutex
 	address  string
@@ -82,12 +85,13 @@ const (
 
 const protocolTimeout = 10 * time.Second
 
-func NewSession(hub *Hub, store *Store, settings *Settings, publisher *mqttPublisher) *Session {
+func NewSession(hub *Hub, store *Store, settings *Settings, publisher *mqttPublisher, db *HistoryDB) *Session {
 	return &Session{
 		hub:       hub,
 		store:     store,
 		settings:  settings,
 		publisher: publisher,
+		db:        db,
 		status:    sessionIdle,
 		power:     newPowerTrack(),
 	}
@@ -733,7 +737,10 @@ func (s *Session) setMeta(model, firmware string) {
 func (s *Session) setSample(sample *Sample) {
 	s.mu.Lock()
 	sample.Timestamp = time.Now()
-	sample.Balance = analyseBalance(sample.CellsMv)
+	sample.Balance = analyseBalance(sample.CellsMv, packContext{
+		DesignAh: sample.DesignAh,
+		Cycles:   sample.Cycles,
+	})
 	s.sample = sample
 	s.updated = sample.Timestamp
 	s.status = sessionConnected
@@ -772,6 +779,9 @@ func (s *Session) setSample(sample *Sample) {
 		return
 	}
 	s.store.SaveLastSample(address, sample)
+	if s.settings == nil || s.settings.StoreSamples() {
+		s.db.Record(address, sample)
+	}
 	s.mu.Lock()
 	s.samples++
 	s.mu.Unlock()

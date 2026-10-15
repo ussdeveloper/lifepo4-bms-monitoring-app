@@ -983,6 +983,87 @@ body.remote #release-button { display: none; }
   color: var(--ink-faint);
 }
 
+/* --- cell voltages over time --- */
+
+.range-picker { display: inline-flex; align-items: center; gap: 4px; }
+
+.range-picker button {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.range-picker button.active {
+  color: #00706f;
+  border-color: rgba(0, 194, 194, 0.5);
+  background: rgba(0, 194, 194, 0.12);
+}
+
+.cell-chart-wrap { position: relative; margin-top: 8px; }
+
+.cell-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+}
+
+.cell-chart .cell-line {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.cell-chart .c0 { stroke: #00a5a5; }
+.cell-chart .c1 { stroke: #6a7ee6; }
+.cell-chart .c2 { stroke: #e0a020; }
+.cell-chart .c3 { stroke: #d4568b; }
+.cell-chart .c4 { stroke: #35a06a; }
+.cell-chart .c5 { stroke: #8a6fe6; }
+.cell-chart .c6 { stroke: #c2703c; }
+.cell-chart .c7 { stroke: #4b8fb8; }
+
+.chart-axis {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--ink-faint);
+}
+
+.chart-axis.bottom { top: auto; bottom: -4px; }
+
+/* --- database row in the settings panel --- */
+
+.db-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 10px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.db-row .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-actions { display: flex; flex: none; gap: 8px; }
+
+.db-actions .pill {
+  text-decoration: none;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.db-actions .pill.disabled { opacity: 0.45; pointer-events: none; }
+.db-state { margin: -6px 0 10px; font-size: 11.5px; }
+
 .temps { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .history {

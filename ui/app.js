@@ -100,6 +100,15 @@ const STRINGS = {
     "settings.api": "Read API",
     "settings.console": "Console window",
     "settings.consoleHint": "Show a console window with the log while the application runs. The same lines always go to lifepo4-bms-monitor.log next to the executable.",
+    "settings.store": "Cell history database",
+    "settings.storeHint": "Store every reading with all cell voltages in a SQLite file, so the cells can be charted over hours, days or months. The file lives in the application data directory and can be downloaded as a backup or merged back in.",
+    "settings.storeStats": "{n} readings · {batteries} batteries · {size}",
+    "settings.storeUnavailable": "not available",
+    "settings.storeExport": "Download backup",
+    "settings.storeImport": "Import backup",
+    "settings.storeImporting": "Importing…",
+    "settings.storeImported": "Imported: {n} new readings merged.",
+    "settings.storeImportFailed": "Import failed: {error}",
     "settings.radios": "Bluetooth radios",
     "settings.radiosHint": "Windows scans with the default radio. A battery that only another radio sees can be added by its address.",
     "settings.radiosUnknown": "not detected",
@@ -159,6 +168,11 @@ const STRINGS = {
     "balance.balanced.bottom": "{spread} mV apart at the bottom of the charge — cells are balanced (limit ±{tolerance} mV)",
     "balance.phantom": "{spread} mV apart in the flat part of the curve — a phantom imbalance: the cells are nearly empty or nearly full there, not really apart. Cell {cell} is the lowest; watch it above 3.40 V while charging",
     "balance.imbalanced": "{spread} mV apart at the top of the charge — cells are drifting apart (limit ±{tolerance} mV). Cell {cell} is the lowest; a balancer evens them out over the next charges",
+    "balance.newPack": "{cycles} cycles",
+    "balance.largeCells": "{ah} Ah cells",
+    "balance.widened": "The window is ±{total} mV instead of ±{base} ({extra} mV more for {why}).",
+    "cells.history": "Cells over time",
+    "cells.historyNote": "{n} readings of the last {window} · spread {spread} mV",
     "balance.imbalanced.bottom": "{spread} mV apart at the bottom of the charge — cell {cell} gives its energy first (limit ±{tolerance} mV)",
     "temp.sensor": "sensor {index}: {value} °C",
     "error.noDevice": "The battery is not in range — wake it up and try again.",
@@ -259,6 +273,15 @@ const STRINGS = {
     "settings.api": "API odczytu",
     "settings.console": "Okno konsoli",
     "settings.consoleHint": "Pokaż okno konsoli z logiem podczas działania programu. Te same linie zawsze trafiają do lifepo4-bms-monitor.log obok pliku exe.",
+    "settings.store": "Baza historii ogniw",
+    "settings.storeHint": "Zapisuj każdy odczyt ze wszystkimi napięciami ogniw w pliku SQLite, żeby można było rysować wykresy z godzin, dni i miesięcy. Plik leży w katalogu danych aplikacji; można go pobrać jako backup albo wgrać z powrotem.",
+    "settings.storeStats": "{n} odczytów · {batteries} akumulatorów · {size}",
+    "settings.storeUnavailable": "niedostępna",
+    "settings.storeExport": "Pobierz backup",
+    "settings.storeImport": "Wgraj backup",
+    "settings.storeImporting": "Wgrywanie…",
+    "settings.storeImported": "Wgrano: dodano {n} nowych odczytów.",
+    "settings.storeImportFailed": "Import nie udał się: {error}",
     "settings.radios": "Radia Bluetooth",
     "settings.radiosHint": "Windows skanuje domyślnym radiem. Akumulator widoczny tylko dla innego radia możesz dodać po adresie.",
     "settings.radiosUnknown": "nie wykryto",
@@ -319,6 +342,11 @@ const STRINGS = {
     "balance.phantom": "różnica {spread} mV w płaskiej części krzywej — to debalans widmowy: ogniwa są tam prawie puste albo prawie pełne, a nie naprawdę rozjechane. Najniższe jest ogniwo {cell}; obserwuj je powyżej 3,40 V przy ładowaniu",
     "balance.imbalanced": "różnica {spread} mV u góry ładowania — ogniwa się rozjeżdżają (limit ±{tolerance} mV). Najniższe jest ogniwo {cell}; balanser wyrówna je przy kolejnych ładowaniach",
     "balance.imbalanced.bottom": "różnica {spread} mV u dołu rozładowania — ogniwo {cell} oddaje energię pierwsze (limit ±{tolerance} mV)",
+    "cells.history": "Ogniwa w czasie",
+    "cells.historyNote": "{n} odczytów z ostatnich {window} · rozrzut {spread} mV",
+    "balance.newPack": "{cycles} cykli",
+    "balance.largeCells": "ogniwa {ah} Ah",
+    "balance.widened": "Okno to ±{total} mV zamiast ±{base} (o {extra} mV więcej przez: {why}).",
     "temp.sensor": "czujnik {index}: {value} °C",
     "error.noDevice": "Akumulator jest poza zasięgiem — wybudź go i spróbuj ponownie.",
     "error.connect": "Nie udało się połączyć z akumulatorem.",
@@ -432,6 +460,18 @@ const el = {
   cellsSummary: document.getElementById("cells-summary"),
   cellsBalance: document.getElementById("cells-balance"),
   cellsLegend: document.getElementById("cells-legend"),
+  cellHistoryBlock: document.getElementById("cell-history-block"),
+  cellRange: document.getElementById("cell-range"),
+  cellChart: document.getElementById("cell-chart"),
+  cellChartMax: document.getElementById("cell-chart-max"),
+  cellChartMin: document.getElementById("cell-chart-min"),
+  cellChartNote: document.getElementById("cell-chart-note"),
+  storeToggle: document.getElementById("store-toggle"),
+  dbStats: document.getElementById("db-stats"),
+  dbExport: document.getElementById("db-export"),
+  dbImport: document.getElementById("db-import"),
+  dbFile: document.getElementById("db-file"),
+  dbState: document.getElementById("db-state"),
   temps: document.getElementById("temps"),
 };
 
@@ -495,6 +535,7 @@ function setLanguage(next) {
     renderChecking();
     renderDetail();
     renderChrome();
+    refreshCellChart();
   }
 }
 
@@ -771,7 +812,9 @@ function fillSettings() {
   el.intervalCustom.value = String(interval);
   el.releaseMinutes.value = String(releaseMinutes());
   el.apiToggle.checked = Boolean(settings.apiEnabled);
+  el.storeToggle.checked = settings.storeSamples !== false;
   el.consoleToggle.checked = Boolean(settings.console);
+  renderDBStats();
   el.mqttEnabled.checked = Boolean(settings.mqtt && settings.mqtt.enabled);
   el.mqttHost.value = (settings.mqtt && settings.mqtt.host) || "";
   el.mqttPort.value = String((settings.mqtt && settings.mqtt.port) || 1883);
@@ -798,8 +841,51 @@ function renderRadios() {
   el.radiosValue.textContent = `${radios.length} · ${named.join(", ")}`;
 }
 
-function updateApiHint() {
-  if (!el.apiToggle.checked) {
+// renderDBStats shows what the history database holds, so a backup has a size
+// next to it.
+function renderDBStats() {
+  const history = (state && state.config && state.config.history) || null;
+  if (!history || !history.path) {
+    el.dbStats.textContent = t("settings.storeUnavailable");
+    el.dbExport.classList.add("disabled");
+    return;
+  }
+  el.dbExport.classList.remove("disabled");
+  const size = history.bytes ? `${(history.bytes / (1024 * 1024)).toFixed(1)} MB` : "";
+  el.dbStats.textContent = t("settings.storeStats", {
+    n: history.samples || 0,
+    batteries: history.batteries || 0,
+    size,
+  });
+  el.dbStats.title = history.path;
+}
+
+// importDBFile merges a chosen backup into the history and reports what came in.
+async function importDBFile(file) {
+  if (!file) return;
+  const body = new FormData();
+  body.append("file", file);
+  el.dbState.hidden = false;
+  el.dbState.textContent = t("settings.storeImporting");
+  try {
+    const response = await fetch("/api/db/import", { method: "POST", body });
+    const text = (await response.text()).trim();
+    if (!response.ok) throw new Error(text || `HTTP ${response.status}`);
+    const result = JSON.parse(text);
+    el.dbState.textContent = t("settings.storeImported", { n: result.added });
+    await poll();
+  } catch (error) {
+    el.dbState.textContent = t("settings.storeImportFailed", { error: String(error) });
+  }
+}
+
+el.dbImport.addEventListener("click", () => el.dbFile.click());
+el.dbFile.addEventListener("change", () => {
+  importDBFile(el.dbFile.files && el.dbFile.files[0]);
+  el.dbFile.value = "";
+});
+
+function updateApiHint() {  if (!el.apiToggle.checked) {
     el.apiHint.textContent = t("settings.apiDisabled");
     return;
   }
@@ -820,6 +906,7 @@ async function saveSettings() {
     intervalS: Number.isFinite(interval) && interval > 0 ? interval : undefined,
     releaseMinutes: releaseMinutesFromInput(),
     apiEnabled: el.apiToggle.checked,
+    storeSamples: el.storeToggle.checked,
     console: el.consoleToggle.checked,
     mqtt: {
       enabled: el.mqttEnabled.checked,
@@ -1232,6 +1319,12 @@ function renderDetail() {
   renderFlags(sample);
   renderCells(sample);
   renderTemps(sample);
+  scheduleCellChart(false);
+}
+
+// Called when the language changes: the chart labels are translated text.
+function refreshCellChart() {
+  if (!el.cellHistoryBlock.hidden) loadCellChart();
 }
 
 /* --- charging power graph (last ten minutes) --- */
@@ -1403,17 +1496,141 @@ function renderBalance(balance) {
   }
   const key = `balance.${balance.state}.${balance.zone}`;
   const known = STRINGS.en[key] !== undefined ? key : `balance.${balance.state}`;
-  el.cellsBalance.textContent = t(known, {
+  let text = t(known, {
     spread: balance.spreadMv,
     tolerance: balance.toleranceMv,
     low: fixed(balance.lowMv / 1000, 3),
     high: fixed(balance.highMv / 1000, 3),
     cell: balance.weak,
   });
+  // A new pack and large cells widen the window; say so instead of leaving a
+  // number that does not match the table in the documentation.
+  const reasons = [];
+  if (balance.newPack) reasons.push(t("balance.newPack", { cycles: state.session.sample.cycles }));
+  if (balance.largeCells) reasons.push(t("balance.largeCells", { ah: fixed(state.session.sample.designAh, 0) }));
+  if (balance.adjustMv > 0 && reasons.length) {
+    text += ` ${t("balance.widened", {
+      base: balance.baseMv,
+      total: balance.toleranceMv,
+      extra: balance.adjustMv,
+      why: reasons.join(", "),
+    })}`;
+  }
+  el.cellsBalance.textContent = text;
   el.cellsBalance.className = `cell-balance ${balance.state}`;
   el.cellsBalance.hidden = false;
   el.cellsLegend.hidden = false;
 }
+
+/* --- cell voltages over time (from the history database) --- */
+
+let cellRangeMinutes = 60;
+let cellChartTimer = 0;
+let cellChartAddress = "";
+
+// scheduleCellChart loads the history when the monitored battery changes and
+// then once a minute: the chart shows hours, so refreshing it with every
+// reading would only churn.
+function scheduleCellChart(force) {
+  const address = (state.session && state.session.addr) || "";
+  const changed = address !== cellChartAddress;
+  if (!changed && !force) return;
+  cellChartAddress = address;
+  clearTimeout(cellChartTimer);
+  loadCellChart();
+  cellChartTimer = setTimeout(() => scheduleCellChart(true), 60000);
+}
+
+async function loadCellChart() {
+  const address = (state.session && state.session.addr) || "";
+  const sampling = !state.config.settings || state.config.settings.storeSamples !== false;
+  if (!address || !sampling) {
+    el.cellHistoryBlock.hidden = true;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/cells/history?addr=${encodeURIComponent(address)}&minutes=${cellRangeMinutes}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    renderCellChart(address, data);
+  } catch (error) {
+    el.cellHistoryBlock.hidden = true;
+  }
+}
+
+// renderCellChart draws one line per cell, scaled to the voltages it found.
+function renderCellChart(address, data) {
+  const points = (data && data.points) || [];
+  if (points.length < 2) {
+    el.cellHistoryBlock.hidden = true;
+    return;
+  }
+  const width = 480;
+  const height = 150;
+  const count = points[0].cells.length;
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (const point of points) {
+    for (const value of point.cells) {
+      if (value < minimum) minimum = value;
+      if (value > maximum) maximum = value;
+    }
+  }
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) {
+    el.cellHistoryBlock.hidden = true;
+    return;
+  }
+  // Keep a few millivolts of air so a flat pack does not fill the whole box.
+  const padding = Math.max(4, (maximum - minimum) * 0.1);
+  const low = minimum - padding;
+  const high = maximum + padding;
+  // The timestamps arrive as ISO strings, so they have to be turned into
+  // numbers before anything can be scaled.
+  const times = points.map((point) => new Date(point.t).getTime());
+  const first = times[0];
+  const last = times[times.length - 1];
+  const span = Math.max(1, last - first);
+
+  const lines = [];
+  for (let cell = 0; cell < count; cell += 1) {
+    const coordinates = points
+      .map((point, index) => {
+        const value = point.cells[cell];
+        if (!Number.isFinite(value) || !Number.isFinite(times[index])) return null;
+        const x = ((times[index] - first) / span) * width;
+        const y = height - ((value - low) / (high - low)) * height;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+    lines.push(`<polyline class="cell-line c${cell % 8}" points="${coordinates}"/>`);
+  }
+  el.cellChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  el.cellChart.innerHTML = lines.join("");
+  el.cellChartMax.textContent = `${fixed(maximum / 1000, 3)} V`;
+  el.cellChartMin.textContent = `${fixed(minimum / 1000, 3)} V`;
+  el.cellChartNote.textContent = t("cells.historyNote", {
+    n: points.length,
+    spread: maximum - minimum,
+    window: formatRange(cellRangeMinutes),
+  });
+  el.cellHistoryBlock.hidden = false;
+}
+
+function formatRange(minutes) {
+  if (minutes >= 1440) return `${Math.round(minutes / 1440)} d`;
+  if (minutes >= 60) return `${Math.round(minutes / 60)} h`;
+  return `${minutes} min`;
+}
+
+el.cellRange.querySelectorAll("button").forEach((button) => {
+  button.addEventListener("click", () => {
+    el.cellRange.querySelectorAll("button").forEach((other) => other.classList.remove("active"));
+    button.classList.add("active");
+    cellRangeMinutes = Number(button.dataset.minutes) || 60;
+    loadCellChart();
+  });
+});
 
 function renderTemps(sample) {
   const temperatures = sample.temperaturesC || [];

@@ -235,6 +235,24 @@
           <p class="cell-legend" id="cells-legend" hidden data-i18n="cells.legend">The band is the window every cell should stay in; a cell outside it is highlighted. In the flat part of the curve (3.10–3.40 V) a spread says little about capacity — the real one shows above 3.40 V while charging and below 3.10 V while discharging.</p>
         </div>
 
+        <div class="block" id="cell-history-block" hidden>
+          <div class="block-head">
+            <span class="metric-label" data-i18n="cells.history">Cells over time</span>
+            <span class="range-picker" id="cell-range">
+              <button type="button" data-minutes="60" class="active">1 h</button>
+              <button type="button" data-minutes="360">6 h</button>
+              <button type="button" data-minutes="1440">24 h</button>
+              <button type="button" data-minutes="10080">7 d</button>
+            </span>
+          </div>
+          <div class="cell-chart-wrap">
+            <svg class="cell-chart" id="cell-chart" viewBox="0 0 480 150" preserveAspectRatio="none" role="img"></svg>
+            <span class="chart-axis" id="cell-chart-max"></span>
+            <span class="chart-axis bottom" id="cell-chart-min"></span>
+          </div>
+          <p class="cell-legend" id="cell-chart-note">–</p>
+        </div>
+
         <div class="block">
           <div class="block-head">
             <span class="metric-label" data-i18n="metric.temperatures">Temperatures</span>
@@ -340,6 +358,26 @@
           <span class="muted">min</span>
         </div>
       </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.store">Cell history database</span>
+          <span class="muted" data-i18n="settings.storeHint">Store every reading with all cell voltages in a SQLite file, so the cells can be charted over hours, days or months. Download it as a backup or merge a backup back in.</span>
+        </div>
+        <div class="setting-control">
+          <label class="switch"><input type="checkbox" id="store-toggle"><span></span></label>
+        </div>
+      </div>
+
+      <div class="db-row">
+        <span class="mono" id="db-stats">–</span>
+        <span class="db-actions">
+          <a class="pill pill-small" id="db-export" data-i18n="settings.storeExport" href="/api/db/export" download>Download backup</a>
+          <button class="pill pill-small" id="db-import" type="button" data-i18n="settings.storeImport">Import backup</button>
+          <input type="file" id="db-file" accept=".db,application/octet-stream" hidden>
+        </span>
+      </div>
+      <p class="db-state muted" id="db-state" hidden></p>
 
       <div class="setting">
         <div class="setting-text">
