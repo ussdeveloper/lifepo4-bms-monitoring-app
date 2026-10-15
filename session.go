@@ -733,6 +733,7 @@ func (s *Session) setMeta(model, firmware string) {
 func (s *Session) setSample(sample *Sample) {
 	s.mu.Lock()
 	sample.Timestamp = time.Now()
+	sample.Balance = analyseBalance(sample.CellsMv)
 	s.sample = sample
 	s.updated = sample.Timestamp
 	s.status = sessionConnected

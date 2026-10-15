@@ -179,9 +179,13 @@ func (s *Server) handleSettings(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "invalid request", http.StatusBadRequest)
 		return
 	}
+	consoleBefore := s.settings.Console()
 	view, before, after := s.settings.Update(patch)
 	if before != after {
 		log.Printf("refresh interval changed to %s", after)
+	}
+	if consoleBefore != s.settings.Console() {
+		applyConsoleSetting(s.settings.Console())
 	}
 	writeJSON(writer, view)
 }

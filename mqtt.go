@@ -258,6 +258,11 @@ type statePayload struct {
 	Balancing   bool      `json:"balancing"`
 	Problem     uint32    `json:"problem"`
 	EtaMinutes  int       `json:"eta_min,omitempty"`
+	// BalanceMv is the spread between the cells and BalanceState tells whether
+	// that spread means anything at the current state of charge ("balanced",
+	// "phantom" or "imbalanced").
+	BalanceMv    int    `json:"balance_mv,omitempty"`
+	BalanceState string `json:"balance_state,omitempty"`
 }
 
 func buildStatePayload(battery storeDevice) ([]byte, error) {
@@ -312,6 +317,10 @@ func buildStatePayload(battery storeDevice) ([]byte, error) {
 	if sample.EtaS > 0 {
 		payload.EtaMinutes = int(sample.EtaS / 60)
 	}
+	if sample.Balance != nil {
+		payload.BalanceMv = sample.Balance.SpreadMv
+		payload.BalanceState = sample.Balance.State
+	}
 	return json.Marshal(payload)
 }
 
@@ -336,6 +345,7 @@ var discoveryEntities = []discoveryEntity{
 	{component: "sensor", objectID: "cell_min", name: "Cell voltage minimum", template: "{{ value_json.cell_min_v }}", unit: "V", deviceClass: "voltage"},
 	{component: "sensor", objectID: "cell_max", name: "Cell voltage maximum", template: "{{ value_json.cell_max_v }}", unit: "V", deviceClass: "voltage"},
 	{component: "sensor", objectID: "cell_delta", name: "Cell voltage spread", template: "{{ value_json.cell_delta_mv }}", unit: "mV"},
+	{component: "sensor", objectID: "balance_state", name: "Cell balance", template: "{{ value_json.balance_state }}", icon: "mdi:scale-balance"},
 	{component: "sensor", objectID: "temp_min", name: "Temperature minimum", template: "{{ value_json.temp_min_c }}", unit: "\u00b0C", deviceClass: "temperature"},
 	{component: "sensor", objectID: "temp_max", name: "Temperature maximum", template: "{{ value_json.temp_max_c }}", unit: "\u00b0C", deviceClass: "temperature"},
 	{component: "sensor", objectID: "problems", name: "Problem codes", template: "{{ value_json.problem }}"},

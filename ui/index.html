@@ -231,6 +231,8 @@
             <span class="muted" id="cells-summary"></span>
           </div>
           <div class="cells" id="cells"></div>
+          <p class="cell-balance" id="cells-balance" hidden></p>
+          <p class="cell-legend" id="cells-legend" hidden data-i18n="cells.legend">The band is the window every cell should stay in; a cell outside it is highlighted. In the flat part of the curve (3.10–3.40 V) a spread says little about capacity — the real one shows above 3.40 V while charging and below 3.10 V while discharging.</p>
         </div>
 
         <div class="block">
@@ -336,6 +338,16 @@
         <div class="setting-control">
           <input type="number" id="release-minutes" class="number" min="1" max="120" step="1" value="5">
           <span class="muted">min</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-label" data-i18n="settings.console">Console window</span>
+          <span class="muted" data-i18n="settings.consoleHint">Show a console window with the log while the application runs. The same lines always go to lifepo4-bms-monitor.log next to the executable.</span>
+        </div>
+        <div class="setting-control">
+          <label class="switch"><input type="checkbox" id="console-toggle"><span></span></label>
         </div>
       </div>
 

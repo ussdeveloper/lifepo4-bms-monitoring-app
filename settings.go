@@ -24,6 +24,7 @@ type settingsFile struct {
 	IntervalS   float64      `json:"intervalS"`
 	ReleaseMins int          `json:"releaseMinutes"`
 	APIEnabled  bool         `json:"apiEnabled"`
+	Console     bool         `json:"console"`
 	MQTT        mqttSettings `json:"mqtt"`
 }
 
@@ -162,6 +163,15 @@ func (s *Settings) ReleaseDuration() time.Duration {
 	return time.Duration(s.value.ReleaseMins) * time.Minute
 }
 
+// Console reports whether the application should show a console window with the
+// log. It is off by default: the windowed application is meant to run without
+// one, and the log is written to a file either way.
+func (s *Settings) Console() bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.value.Console
+}
+
 // MQTT returns a copy of the MQTT configuration.
 func (s *Settings) MQTT() mqttSettings {
 	s.mutex.RLock()
@@ -178,6 +188,7 @@ type settingsView struct {
 	MinReleaseMins int          `json:"minReleaseMinutes"`
 	MaxReleaseMins int          `json:"maxReleaseMinutes"`
 	APIEnabled     bool         `json:"apiEnabled"`
+	Console        bool         `json:"console"`
 	MQTT           mqttSettings `json:"mqtt"`
 	Path           string       `json:"path"`
 }
@@ -192,6 +203,7 @@ func (s *Settings) viewLocked() settingsView {
 		MinReleaseMins: minReleaseMins,
 		MaxReleaseMins: maxReleaseMins,
 		APIEnabled:     s.value.APIEnabled,
+		Console:        s.value.Console,
 		MQTT:           s.value.MQTT,
 		Path:           s.path,
 	}
@@ -209,6 +221,7 @@ type settingsPatch struct {
 	IntervalS   *float64      `json:"intervalS"`
 	ReleaseMins *int          `json:"releaseMinutes"`
 	APIEnabled  *bool         `json:"apiEnabled"`
+	Console     *bool         `json:"console"`
 	MQTT        *mqttSettings `json:"mqtt"`
 }
 
@@ -229,6 +242,9 @@ func (s *Settings) Update(patch settingsPatch) (settingsView, time.Duration, tim
 	}
 	if patch.APIEnabled != nil {
 		s.value.APIEnabled = *patch.APIEnabled
+	}
+	if patch.Console != nil {
+		s.value.Console = *patch.Console
 	}
 	if patch.ReleaseMins != nil {
 		s.value.ReleaseMins = clampInt(*patch.ReleaseMins, minReleaseMins, maxReleaseMins)

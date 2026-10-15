@@ -25,6 +25,9 @@ func TestSettingsDefaultsAndLimits(t *testing.T) {
 	if got := settings.ReleaseDuration(); got != 5*time.Minute {
 		t.Errorf("release time: got %s, want 5m", got)
 	}
+	if settings.Console() {
+		t.Error("the console window must be off by default")
+	}
 
 	// The interval is clamped to the supported range.
 	interval := 0.1
@@ -56,6 +59,7 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	interval := 12.0
 	apiEnabled := false
 	releaseMins := 15
+	console := true
 	mqttConfig := mqttSettings{
 		Enabled:         true,
 		Host:            "  broker.local  ",
@@ -70,6 +74,7 @@ func TestSettingsUpdatePersists(t *testing.T) {
 		IntervalS:   &interval,
 		APIEnabled:  &apiEnabled,
 		ReleaseMins: &releaseMins,
+		Console:     &console,
 		MQTT:        &mqttConfig,
 	})
 	if before != 5*time.Second || after != 12*time.Second {
@@ -77,6 +82,9 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	}
 	if view.IntervalS != 12 || view.APIEnabled || !view.MQTT.Enabled {
 		t.Errorf("unexpected view: %+v", view)
+	}
+	if !view.Console {
+		t.Error("the console flag must reach the interface")
 	}
 	if view.MinReleaseMins != 1 || view.MaxReleaseMins != 120 {
 		t.Errorf("release limits not exposed: %+v", view)
@@ -102,6 +110,9 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	if got := reloaded.ReleaseDuration(); got != 15*time.Minute {
 		t.Errorf("release time not persisted: %s", got)
 	}
+	if !reloaded.Console() {
+		t.Error("the console setting not persisted")
+	}
 
 	// Without a patch the other values stay untouched.
 	interval = 30
@@ -111,6 +122,9 @@ func TestSettingsUpdatePersists(t *testing.T) {
 	}
 	if view.ReleaseMins != 15 {
 		t.Errorf("partial update cleared the release time: %d", view.ReleaseMins)
+	}
+	if !view.Console {
+		t.Error("a partial update must not switch the console off")
 	}
 	if _, err := os.Stat(filepath.Join(directory, "settings.json")); err != nil {
 		t.Errorf("settings.json missing: %v", err)

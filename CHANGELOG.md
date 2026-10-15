@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a phone or a second computer can find it; the status bar counts the time
   left and monitoring resumes on its own afterwards. The release time is a
   setting (five minutes by default) and can also be passed to the API.
+* Cell balance in the detail panel: a window drawn behind the cell bars (tight,
+  ±30 mV, above 3.40 V per cell where the curve is steep and the BMS balances;
+  wide, ±60 mV, in the flat 3.10–3.40 V part where a spread is a *phantom*
+  imbalance). Cells outside the window are highlighted, the weakest cell is
+  named, and the same values go to MQTT as `balance_mv` / `balance_state` with a
+  Home Assistant sensor.
+* Console window setting: the windowed application starts without a console
+  (the build uses the Windows GUI subsystem) and the setting opens one with the
+  log when it is wanted, live, without restarting. The log file is written
+  either way.
 * Two tabs on the left: **Batteries** lists everything that answers (including
   addresses added by hand), **Bluetooth devices** lists everything the scan sees,
   each with a count. Before the user picks a tab an empty battery list falls back

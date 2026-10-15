@@ -14,6 +14,7 @@ read request.
 * Two tabs on the left: **Batteries** (everything that answers) and **Bluetooth devices** (everything the scan sees), each with a count
 * Title bar: drag, resize from every edge, and an *unplug* button that releases the battery to another device for the configured number of minutes
 * Detail panel: state of charge, voltage, current, charging power with a graph of the last ten minutes, estimated time to full (or empty), cells, temperatures and MOSFET state
+* Cell balance: a band on the cell bars shows the window every cell should stay in, cells outside it are highlighted, and the spread is explained — including why a spread in the flat part of the curve is a *phantom* imbalance (see below)
 * Settings panel: refresh interval, release time, Bluetooth radios, read API, MQTT with Home Assistant discovery
 * Command line tool: Python TUI for quick checks and reports (`cli/`)
 * Battery data and history are stored per user in `%APPDATA%\LiFePO4BMSMonitor`
@@ -140,6 +141,8 @@ The gear icon in the title bar opens the settings panel. Everything is stored in
 | Setting | Meaning |
 |---|---|
 | Refresh interval | slider from 2 s to 30 s, plus a free value (1 s … 1 h) in the number field |
+| Release time | how long the *unplug* button hands the battery to another device (1 … 120 minutes) |
+| Console window | show a console window with the log while the application runs (off by default; the log file is written either way) |
 | Bluetooth radios | how many radios Windows reports (the scan itself uses the default one) |
 | Read API | switch for the public read endpoint (see below) |
 | MQTT and Home Assistant | broker host, port, user, password, topic prefix |
@@ -295,6 +298,25 @@ would be meaningless (below 30 s or beyond two days).
 
 The last known state is published right after connecting, so Home Assistant has
 values even when a battery is asleep at that moment.
+
+### Cell balance and the phantom imbalance
+
+The detail panel draws the cells as bars with a **window** behind them: the range
+every cell should stay inside at the current state of charge. A cell outside it
+is highlighted in amber, and a line under the bars says what the spread means:
+
+| Where the pack is | Window | What a spread means there |
+|---|---|---|
+| above 3.40 V per cell (top of the charge) | ±30 mV | real: the curve is steep, so a difference is a difference in capacity. This is where the BMS balances |
+| 3.10 … 3.40 V per cell (the flat part) | ±60 mV | mostly *phantom*: the curve is nearly flat, so tens of millivolts there are a difference in readings, not in capacity. It usually disappears on its own and there is nothing to fix |
+| below 3.10 V per cell (bottom of the discharge) | ±40 mV | real: the cell that is lowest here gives its energy first |
+
+The window follows the pack, not an absolute voltage: it is centred on the
+average cell, because balance is about cells being equal to each other. A wide
+spread in the flat part is reported as a phantom imbalance with the weakest cell
+named, so it can be watched above 3.40 V while charging — that is where it either
+proves real or disappears. The spread and the verdict are also published to MQTT
+(`balance_mv`, `balance_state` with a Home Assistant sensor).
 
 ## Stored data
 

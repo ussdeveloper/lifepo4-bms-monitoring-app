@@ -98,6 +98,8 @@ const STRINGS = {
     "settings.release": "Release time",
     "settings.releaseHint": "How long the unplug button hands the battery over to another device, in minutes.",
     "settings.api": "Read API",
+    "settings.console": "Console window",
+    "settings.consoleHint": "Show a console window with the log while the application runs. The same lines always go to lifepo4-bms-monitor.log next to the executable.",
     "settings.radios": "Bluetooth radios",
     "settings.radiosHint": "Windows scans with the default radio. A battery that only another radio sees can be added by its address.",
     "settings.radiosUnknown": "not detected",
@@ -150,6 +152,14 @@ const STRINGS = {
     "flags.noProblems": "no problems",
     "flags.problems": "problem codes: 0x{code}",
     "cells.summary": "{count} cells · min {min} V · max {max} V · spread {delta} mV",
+    "cells.legend": "The band is the window every cell should stay in; a cell outside it is highlighted. In the flat part of the curve (3.10–3.40 V) a spread says little about capacity — the real one shows above 3.40 V while charging and below 3.10 V while discharging.",
+    "balance.balanced": "cells are together — {spread} mV apart, window ±{tolerance} mV",
+    "balance.balanced.flat": "{spread} mV apart in the flat part of the curve — normal, nothing to do",
+    "balance.balanced.top": "{spread} mV apart at the top of the charge — cells are balanced (limit ±{tolerance} mV)",
+    "balance.balanced.bottom": "{spread} mV apart at the bottom of the charge — cells are balanced (limit ±{tolerance} mV)",
+    "balance.phantom": "{spread} mV apart in the flat part of the curve — a phantom imbalance: the cells are nearly empty or nearly full there, not really apart. Cell {cell} is the lowest; watch it above 3.40 V while charging",
+    "balance.imbalanced": "{spread} mV apart at the top of the charge — cells are drifting apart (limit ±{tolerance} mV). Cell {cell} is the lowest; a balancer evens them out over the next charges",
+    "balance.imbalanced.bottom": "{spread} mV apart at the bottom of the charge — cell {cell} gives its energy first (limit ±{tolerance} mV)",
     "temp.sensor": "sensor {index}: {value} °C",
     "error.noDevice": "The battery is not in range — wake it up and try again.",
     "error.connect": "Could not connect to the battery.",
@@ -247,6 +257,8 @@ const STRINGS = {
     "settings.releaseHint": "Na ile minut przycisk odłączania oddaje akumulator innemu urządzeniu.",
     "settings.intervalHint": "Jak często odczytywany jest monitorowany akumulator. Ta wartość steruje także zapisem historii CSV.",
     "settings.api": "API odczytu",
+    "settings.console": "Okno konsoli",
+    "settings.consoleHint": "Pokaż okno konsoli z logiem podczas działania programu. Te same linie zawsze trafiają do lifepo4-bms-monitor.log obok pliku exe.",
     "settings.radios": "Radia Bluetooth",
     "settings.radiosHint": "Windows skanuje domyślnym radiem. Akumulator widoczny tylko dla innego radia możesz dodać po adresie.",
     "settings.radiosUnknown": "nie wykryto",
@@ -299,6 +311,14 @@ const STRINGS = {
     "flags.noProblems": "brak problemów",
     "flags.problems": "kody problemów: 0x{code}",
     "cells.summary": "{count} ogniw · min {min} V · max {max} V · różnica {delta} mV",
+    "cells.legend": "Pasmo to okno, w którym powinno trzymać się każde ogniwo; ogniwo poza nim jest podświetlone. W płaskiej części krzywej (3,10–3,40 V) różnica niewiele mówi o pojemności — prawdziwa wychodzi powyżej 3,40 V przy ładowaniu i poniżej 3,10 V przy rozładowaniu.",
+    "balance.balanced": "ogniwa trzymają się razem — różnica {spread} mV, okno ±{tolerance} mV",
+    "balance.balanced.flat": "różnica {spread} mV w płaskiej części krzywej — to normalne, nic nie trzeba robić",
+    "balance.balanced.top": "różnica {spread} mV u góry ładowania — ogniwa są zbalansowane (limit ±{tolerance} mV)",
+    "balance.balanced.bottom": "różnica {spread} mV u dołu rozładowania — ogniwa są zbalansowane (limit ±{tolerance} mV)",
+    "balance.phantom": "różnica {spread} mV w płaskiej części krzywej — to debalans widmowy: ogniwa są tam prawie puste albo prawie pełne, a nie naprawdę rozjechane. Najniższe jest ogniwo {cell}; obserwuj je powyżej 3,40 V przy ładowaniu",
+    "balance.imbalanced": "różnica {spread} mV u góry ładowania — ogniwa się rozjeżdżają (limit ±{tolerance} mV). Najniższe jest ogniwo {cell}; balanser wyrówna je przy kolejnych ładowaniach",
+    "balance.imbalanced.bottom": "różnica {spread} mV u dołu rozładowania — ogniwo {cell} oddaje energię pierwsze (limit ±{tolerance} mV)",
     "temp.sensor": "czujnik {index}: {value} °C",
     "error.noDevice": "Akumulator jest poza zasięgiem — wybudź go i spróbuj ponownie.",
     "error.connect": "Nie udało się połączyć z akumulatorem.",
@@ -380,6 +400,7 @@ const el = {
   intervalRange: document.getElementById("interval-range"),
   intervalCustom: document.getElementById("interval-custom"),
   apiToggle: document.getElementById("api-toggle"),
+  consoleToggle: document.getElementById("console-toggle"),
   apiHint: document.getElementById("api-hint"),
   mqttEnabled: document.getElementById("mqtt-enabled"),
   mqttHost: document.getElementById("mqtt-host"),
@@ -409,6 +430,8 @@ const el = {
   flags: document.getElementById("flags"),
   cells: document.getElementById("cells"),
   cellsSummary: document.getElementById("cells-summary"),
+  cellsBalance: document.getElementById("cells-balance"),
+  cellsLegend: document.getElementById("cells-legend"),
   temps: document.getElementById("temps"),
 };
 
@@ -748,6 +771,7 @@ function fillSettings() {
   el.intervalCustom.value = String(interval);
   el.releaseMinutes.value = String(releaseMinutes());
   el.apiToggle.checked = Boolean(settings.apiEnabled);
+  el.consoleToggle.checked = Boolean(settings.console);
   el.mqttEnabled.checked = Boolean(settings.mqtt && settings.mqtt.enabled);
   el.mqttHost.value = (settings.mqtt && settings.mqtt.host) || "";
   el.mqttPort.value = String((settings.mqtt && settings.mqtt.port) || 1883);
@@ -796,6 +820,7 @@ async function saveSettings() {
     intervalS: Number.isFinite(interval) && interval > 0 ? interval : undefined,
     releaseMinutes: releaseMinutesFromInput(),
     apiEnabled: el.apiToggle.checked,
+    console: el.consoleToggle.checked,
     mqtt: {
       enabled: el.mqttEnabled.checked,
       host: el.mqttHost.value.trim(),
@@ -1328,6 +1353,8 @@ function renderCells(sample) {
   if (!cells.length) {
     el.cells.innerHTML = "";
     el.cellsSummary.textContent = "";
+    el.cellsBalance.hidden = true;
+    el.cellsLegend.hidden = true;
     return;
   }
   const minimum = Math.min(...cells);
@@ -1339,19 +1366,53 @@ function renderCells(sample) {
     delta: maximum - minimum,
   });
 
+  // The band shows the window every cell should stay inside at this state of
+  // charge (the tolerance is wide in the flat part of the curve, where a
+  // spread means nothing, and tight at the ends, where it does).
+  const balance = sample.balance || null;
   const lowerBound = minimum - 20;
   const span = Math.max(1, maximum - lowerBound);
+  const percent = (millivolts) => Math.max(0, Math.min(100, ((millivolts - lowerBound) / span) * 100));
+  const windowMarkup = balance
+    ? `<span class="cell-window" style="left:${percent(balance.lowMv)}%;right:${100 - percent(balance.highMv)}%"></span>`
+    : "";
   el.cells.innerHTML = cells
     .map((millivolts, index) => {
-      const width = Math.max(4, Math.min(100, ((millivolts - lowerBound) / span) * 100));
-      const low = maximum - millivolts >= 25 ? " low" : "";
-      return `<div class="cell-row${low}">
+      const width = Math.max(4, percent(millivolts));
+      const outside = balance
+        ? millivolts < balance.lowMv || millivolts > balance.highMv
+        : maximum - millivolts >= 25;
+      return `<div class="cell-row${outside ? " low" : ""}">
         <span class="muted">${String(index + 1).padStart(2, "0")}</span>
-        <div class="cell-track"><span style="width:${width}%"></span></div>
+        <div class="cell-track">${windowMarkup}<span class="cell-fill" style="width:${width}%"></span></div>
         <span class="cell-value">${fixed(millivolts / 1000, 3)} V</span>
       </div>`;
     })
     .join("");
+
+  renderBalance(balance);
+}
+
+// renderBalance explains the spread: what the window is, whether the pack is
+// inside it, and why a spread in the flat part of the curve is not a fault.
+function renderBalance(balance) {
+  if (!balance) {
+    el.cellsBalance.hidden = true;
+    el.cellsLegend.hidden = true;
+    return;
+  }
+  const key = `balance.${balance.state}.${balance.zone}`;
+  const known = STRINGS.en[key] !== undefined ? key : `balance.${balance.state}`;
+  el.cellsBalance.textContent = t(known, {
+    spread: balance.spreadMv,
+    tolerance: balance.toleranceMv,
+    low: fixed(balance.lowMv / 1000, 3),
+    high: fixed(balance.highMv / 1000, 3),
+    cell: balance.weak,
+  });
+  el.cellsBalance.className = `cell-balance ${balance.state}`;
+  el.cellsBalance.hidden = false;
+  el.cellsLegend.hidden = false;
 }
 
 function renderTemps(sample) {

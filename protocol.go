@@ -60,6 +60,9 @@ type Sample struct {
 	Balancer          *bool     `json:"balancer,omitempty"`
 	ProblemCode       *uint32   `json:"problemCode,omitempty"`
 	Timestamp         time.Time `json:"timestamp"`
+	// Balance compares the cells of this reading (nil when there is only one
+	// cell or none).
+	Balance *Balance `json:"balance,omitempty"`
 	// EtaS is the estimated seconds until the battery is full (while charging)
 	// or empty (while discharging); zero means the estimate is not available.
 	EtaS float64 `json:"etaS,omitempty"`

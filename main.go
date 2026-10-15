@@ -32,6 +32,10 @@ const (
 	logName    = "lifepo4-bms-monitor.log"
 )
 
+// logFile is the file the logger writes to; it stays open for the whole run so
+// the console can be switched on and off without losing the earlier lines.
+var logFile *os.File
+
 func main() {
 	defer logPanic("main")
 
@@ -62,6 +66,9 @@ func main() {
 
 	store := NewStore(*dataFlag)
 	settings := NewSettings(store.Dir(), interval)
+	if settings.Console() {
+		applyConsoleSetting(true)
+	}
 	adapter := bluetooth.DefaultAdapter
 	hub := NewHub(adapter, store)
 	hub.Start(ctx)
@@ -132,14 +139,24 @@ func main() {
 // are still useful. The file is written first: stderr of a GUI process is an
 // invalid handle and would otherwise swallow every message.
 func setupLogging() {
-	writers := []io.Writer{}
 	executable, err := os.Executable()
 	if err == nil {
 		logPath := filepath.Join(filepath.Dir(executable), logName)
 		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 		if err == nil {
-			writers = append(writers, file)
+			logFile = file
 		}
+	}
+	applyLogOutput()
+}
+
+// applyLogOutput points the logger at the log file and, when the application has
+// a console, also at stderr — so the same lines can be followed live. It is
+// called again whenever the console is attached or closed.
+func applyLogOutput() {
+	writers := []io.Writer{}
+	if logFile != nil {
+		writers = append(writers, logFile)
 	}
 	if hasConsole() {
 		writers = append(writers, os.Stderr)
@@ -149,6 +166,26 @@ func setupLogging() {
 	}
 	log.SetOutput(io.MultiWriter(writers...))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+}
+
+// applyConsoleSetting shows or hides the console window of the application,
+// which is what the "console" setting in the settings panel controls.
+func applyConsoleSetting(show bool) {
+	if show {
+		if attachConsole() {
+			applyLogOutput()
+			log.Printf("console window open: this is the log; switch it off in the settings")
+		} else {
+			log.Printf("cannot open a console window")
+		}
+		return
+	}
+	if !consoleOwned {
+		return
+	}
+	log.Printf("console window closing")
+	detachConsole()
+	applyLogOutput()
 }
 
 // logPanic records a crashing goroutine so the log file explains an unexpected

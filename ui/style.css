@@ -937,10 +937,13 @@ body.remote #release-button { display: none; }
   height: 6px;
   border-radius: 999px;
   background: rgba(0, 26, 77, 0.08);
-  overflow: hidden;
+  /* No clipping here: the window band reaches slightly beyond the bar, so its
+     edges stay visible. The bar rounds its own ends. */
 }
 
-.cell-track span {
+.cell-track { position: relative; }
+.cell-track .cell-fill {
+  position: relative;
   display: block;
   height: 100%;
   border-radius: 999px;
@@ -948,8 +951,37 @@ body.remote #release-button { display: none; }
   transition: width 0.7s var(--ease);
 }
 
-.cell-row.low .cell-track span { background: linear-gradient(90deg, #ffb066, #ff8a00); }
+/* The window every cell should stay inside at this state of charge. It reaches
+   a little above and below the bar, so its edges stay visible even where a long
+   bar covers its middle. */
+.cell-track .cell-window {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  border-radius: 999px;
+  background: rgba(0, 194, 194, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(0, 120, 120, 0.55);
+  pointer-events: none;
+}
+
+.cell-row.low .cell-track .cell-fill { background: linear-gradient(90deg, #ffb066, #ff8a00); }
 .cell-row .cell-value { text-align: right; color: var(--ink-soft); font-family: "Cascadia Mono", Consolas, monospace; }
+
+.cell-balance {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.cell-balance.phantom { color: #8a6a1f; }
+.cell-balance.imbalanced { color: #a4520c; }
+
+.cell-legend {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
 
 .temps { display: flex; flex-wrap: wrap; gap: 8px; }
 
