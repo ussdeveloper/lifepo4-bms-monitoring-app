@@ -11,13 +11,16 @@ talks to Bluetooth LE directly, without any external service.
 │      ▼                                                                    │
 │  server.go      /api/state  /api/select  /api/deepscan  /api/window          │
 │                 /api/batteries (public read API)  /api/settings              │
+│                 /api/cells/history  /api/db/export  /api/db/import           │
 │      │                                                                    │
 │      ├── hub.go      scanning, device registry, identification queue      │
 │      ├── session.go  polling session for the selected battery             │
 │      ├── identify.go vendor neutral protocol detection                    │
 │      ├── protocol*.go framing, checksums and decoding                     │
+│      ├── balance.go  cell spread, the window it is judged against         │
 │      ├── settings.go settings.json (interval, sharing, read API, MQTT)      │
 │      ├── mqtt.go     MQTT publishing + Home Assistant discovery           │
+│      ├── db.go       history.db (SQLite): every reading, cell by cell     │
 │      └── store.go    devices.json + history/*.csv in the user profile     │
 │                                                                           │
 │  window.go  Win32: frameless window, drag, icon, DWM rounded corners      │
@@ -111,9 +114,20 @@ second and updates the DOM in place (stable hover state, animated bars).
 
 | File | Content |
 |---|---|
-| `settings.json` | refresh interval, monitoring (shared) mode, read API switch and MQTT configuration |
+| `settings.json` | refresh interval, release time, read API switch, console and history database switches, MQTT configuration |
 | `devices.json` | version, timestamp and one entry per device: address, name, model, brand, protocol, status (`bms`/`notBMS`), RSSI, last seen time and the newest reading |
 | `history\<address>.csv` | one row per sample with the columns documented in the README |
+| `history.db` | SQLite, written by `db.go`: one row per sample in `samples` and one row per cell in `cells`, keyed on (address, unix timestamp) |
+
+`history.db` is the long term store behind the *Cells over time* chart and the
+backups: readings are queued in memory and written in one transaction every
+15 s (`historyFlushEvery`), so polling never waits for the disk. The chart asks
+for a window through `HistoryDB.CellSeries`, which thins the rows down to a few
+hundred points in SQL. `Backup` uses `VACUUM INTO` (a consistent copy without
+locking the writer) and `Import` attaches the uploaded file and merges with
+`INSERT OR IGNORE`, so importing the same backup twice adds nothing. The driver
+is `modernc.org/sqlite`, which is pure Go — no cgo, so the cross build and the
+single binary stay simple.
 
 The history file is also read back: `Store.RecentPower` parses the tail of the
 file and `Session` seeds the ten minute power graph with it, so the graph shows a

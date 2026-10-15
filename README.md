@@ -108,6 +108,8 @@ How the interface behaves:
   address) — the order never depends on signal strength, so rows do not jump
   while scanning. Only the list itself scrolls, from below the heading down to
   the status bar.
+
+![Battery rows](docs/screenshots/rows.png)
 * Hovering a battery row switches the monitoring to it; clicking pins it. The
   automatic choice resumes when the pinned battery is out of range.
 * A small charging indicator next to the battery name shows whether the battery
@@ -121,6 +123,8 @@ How the interface behaves:
   is picked by hand, an empty battery list opens on the device list.
 * The window has its own title bar (drag anywhere on it), a language switch and
   a status bar showing scan state, device counts, history size and version.
+
+![Window controls](docs/screenshots/titlebar.png)
 * **Check every device** re-probes all visible devices, including the ones that
   were rejected earlier.
 * Batteries that were identified once are listed again on the next start, even
@@ -367,6 +371,8 @@ The chart in the detail panel reads this file through
 `GET /api/cells/history?addr=<address>&minutes=<n>` (the response is thinned to
 at most a few hundred points, so a week of data still draws instantly). Other
 computers that read the interface may fetch this endpoint too.
+
+![Cell voltages over time](docs/screenshots/cells-history.png)
 
 Backups are the file itself:
 
