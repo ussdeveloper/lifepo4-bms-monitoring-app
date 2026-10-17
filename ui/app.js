@@ -22,6 +22,7 @@ const STRINGS = {
     "tabs.devices": "Bluetooth devices",
     "remote.note": "read-only · another computer monitors this battery",
     "grid.deepscan": "Check every device",
+    "grid.forceConnect": "Force connect",
     "grid.refresh": "data refreshed every {n} s",
     "grid.progress": "waiting: {pending} · no BMS: {rejected}",
     "grid.saved": "saved batteries appear here even while they are asleep",
@@ -109,6 +110,34 @@ const STRINGS = {
     "settings.storeImporting": "Importing…",
     "settings.storeImported": "Imported: {n} new readings merged.",
     "settings.storeImportFailed": "Import failed: {error}",
+    "device.wifi": "Wi-Fi network",
+    "device.scan": "Scan",
+    "device.ssid": "Network name",
+    "device.password": "Password",
+    "device.join": "Join",
+    "device.scanning": "scanning…",
+    "device.noNetworks": "no network found",
+    "device.connected": "{ssid} · {rssi} dBm",
+    "device.notConnected": "not connected yet",
+    "device.accessPoint": "setup mode: join {ssid} and open 192.168.4.1",
+    "device.stats": "{version} · {platform} · {address} · up {uptime} · {heap} KB free · {display}",
+    "device.memory": "memory {heap} KB free (minimum {min} KB) · chart {points}/{capacity} readings · {dropped} dropped",
+    "device.display": "display SDA {sda} / SCL {scl}",
+    "device.stored": "{stored}/{max} readings in flash ({kb} KB)",
+    "device.noDisplay": "no display found",
+    "device.joining": "Joining {ssid}, the device restarts…",
+    "device.joined": "Saved. The device restarts and joins the network; find it again by its address or name.",
+    "device.joinFailed": "Could not save: {error}",
+    "device.upload": "Update firmware",
+    "device.restart": "Restart",
+    "device.uploading": "Uploading the firmware…",
+    "device.uploadingPercent": "Uploading the firmware… {percent}%",
+    "device.uploadDone": "Update written. The device restarts with the new firmware.",
+    "device.uploadFailed": "Update failed: {error}",
+    "device.restarting": "Restarting…",
+    "device.console": "Device log",
+    "device.consoleHint": "Print the log to the serial port and keep the last lines for /api/log, handy while setting the device up.",
+    "device.apiUrl": "GET {url} (same JSON as the desktop application)",
     "settings.radios": "Bluetooth radios",
     "settings.radiosHint": "Windows scans with the default radio. A battery that only another radio sees can be added by its address.",
     "settings.radiosUnknown": "not detected",
@@ -152,6 +181,7 @@ const STRINGS = {
     "status.mqttOn": "connected",
     "status.mqttOff": "off",
     "card.battery": "Battery",
+    "card.forceConnect": "Connect now",
     "card.offline": "not in range · seen {n} min ago",
     "card.offlineNow": "not in range",
     "card.manual": "by MAC",
@@ -196,6 +226,7 @@ const STRINGS = {
     "tabs.devices": "Urządzenia Bluetooth",
     "remote.note": "tylko odczyt · akumulator monitoruje inny komputer",
     "grid.deepscan": "Sprawdź wszystkie urządzenia",
+    "grid.forceConnect": "Wymuś połączenie",
     "grid.refresh": "dane odświeżane co {n} s",
     "grid.progress": "w kolejce: {pending} · nie BMS: {rejected}",
     "grid.saved": "zapisane akumulatory pojawiają się tutaj także gdy śpią",
@@ -282,6 +313,33 @@ const STRINGS = {
     "settings.storeImporting": "Wgrywanie…",
     "settings.storeImported": "Wgrano: dodano {n} nowych odczytów.",
     "settings.storeImportFailed": "Import nie udał się: {error}",
+    "device.wifi": "Sieć Wi-Fi",
+    "device.scan": "Szukaj",
+    "device.ssid": "Nazwa sieci",
+    "device.password": "Hasło",
+    "device.join": "Połącz",
+    "device.scanning": "szukam…",
+    "device.noNetworks": "nie znaleziono sieci",
+    "device.connected": "{ssid} · {rssi} dBm",
+    "device.notConnected": "jeszcze nie połączono",
+    "device.accessPoint": "tryb konfiguracji: połącz się z {ssid} i wejdź na 192.168.4.1",
+    "device.stats": "{version} · {platform} · {address} · działa {uptime} · {heap} KB wolne · {display}",
+    "device.display": "wyświetlacz SDA {sda} / SCL {scl}",
+    "device.stored": "{stored}/{max} odczytów w flash ({kb} KB)",
+    "device.noDisplay": "nie znaleziono wyświetlacza",
+    "device.joining": "Łączenie z {ssid}, urządzenie się zrestartuje…",
+    "device.joined": "Zapisane. Urządzenie zrestartuje się i połączy z siecią; znajdziesz je po adresie lub nazwie.",
+    "device.joinFailed": "Nie udało się zapisać: {error}",
+    "device.upload": "Wgraj firmware",
+    "device.restart": "Restart",
+    "device.uploading": "Wgrywanie firmware…",
+    "device.uploadingPercent": "Wgrywanie firmware… {percent}%",
+    "device.uploadDone": "Zapisane. Urządzenie zrestartuje się z nowym firmware.",
+    "device.uploadFailed": "Aktualizacja nie udała się: {error}",
+    "device.restarting": "Restartuję…",
+    "device.console": "Log urządzenia",
+    "device.consoleHint": "Wypisuj log na port szeregowy i trzymaj ostatnie linie dla /api/log — przydatne przy konfiguracji urządzenia.",
+    "device.apiUrl": "GET {url} (ten sam JSON co aplikacja desktopowa)",
     "settings.radios": "Radia Bluetooth",
     "settings.radiosHint": "Windows skanuje domyślnym radiem. Akumulator widoczny tylko dla innego radia możesz dodać po adresie.",
     "settings.radiosUnknown": "nie wykryto",
@@ -325,6 +383,7 @@ const STRINGS = {
     "status.mqttOn": "połączone",
     "status.mqttOff": "wyłączone",
     "card.battery": "Akumulator",
+    "card.forceConnect": "Połącz teraz",
     "card.offline": "poza zasięgiem · widziany {n} min temu",
     "card.offlineNow": "poza zasięgiem",
     "card.manual": "po MAC",
@@ -472,6 +531,20 @@ const el = {
   dbImport: document.getElementById("db-import"),
   dbFile: document.getElementById("db-file"),
   dbState: document.getElementById("db-state"),
+  deviceBlock: document.getElementById("device-block"),
+  deviceWifiHint: document.getElementById("device-wifi-hint"),
+  deviceWifiScan: document.getElementById("device-wifi-scan"),
+  deviceWifiForm: document.getElementById("device-wifi-form"),
+  deviceWifiList: document.getElementById("device-wifi-list"),
+  deviceWifiSsid: document.getElementById("device-wifi-ssid"),
+  deviceWifiPassword: document.getElementById("device-wifi-password"),
+  deviceWifiSave: document.getElementById("device-wifi-save"),
+  deviceInfo: document.getElementById("device-info"),
+  deviceFirmware: document.getElementById("device-firmware"),
+  deviceOta: document.getElementById("device-ota"),
+  deviceReboot: document.getElementById("device-reboot"),
+  deviceProgress: document.getElementById("device-progress"),
+  deviceState: document.getElementById("device-state"),
   temps: document.getElementById("temps"),
 };
 
@@ -494,6 +567,20 @@ function chargeState(sample) {
 
 function chargeIconMarkup() {
   return `<span class="charge-icon idle" data-charge="idle">${CHARGE_ICONS.idle}</span>`;
+}
+
+// forceIconMarkup is the small button on a battery card that asks the device to
+// try this battery right now (Lucide "plug-zap"), instead of waiting for it to
+// be heard in the air.
+function forceIconMarkup() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>`;
+}
+
+// statusIconMarkup is the "not in range" marker (Lucide "bluetooth-off"): the
+// card is too narrow for the sentence, so the icon carries it and the exact
+// wording stays in the tooltip.
+function statusIconMarkup() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m17 17-5 5V12l-5 5"/><path d="M14 10l5-5-5-5v12"/><path d="m2 2 20 20"/></svg>`;
 }
 
 /* --- translation helpers --- */
@@ -825,8 +912,19 @@ function fillSettings() {
   el.mqttDiscovery.checked = Boolean(settings.mqtt && settings.mqtt.discovery);
   el.settingsPath.textContent = settings.path || "";
   renderRadios();
+  renderDBStats();
+  renderDevice();
   updateApiHint();
   renderIntervalSlider();
+  fillDeviceWifi();
+}
+
+// fillDeviceWifi pre-fills the network field with what the device is using.
+function fillDeviceWifi() {
+  const device = deviceInfo();
+  if (!device) return;
+  el.deviceWifiSsid.value = device.wifiSsid || "";
+  el.deviceWifiPassword.value = "";
 }
 
 // renderRadios lists the Bluetooth radios of this computer: the BLE scan uses
@@ -885,8 +983,165 @@ el.dbFile.addEventListener("change", () => {
   el.dbFile.value = "";
 });
 
+/* --- the device section (only when the interface runs on the device) --- */
+
+// hasDevice is true when an ESP32 serves this page: it fills the same panel
+// with what only a device can do (Wi-Fi setup, firmware updates, restarting).
+function hasDevice() {
+  return Boolean(state && state.config && state.config.device);
+}
+
+function deviceInfo() {
+  return hasDevice() ? state.config.device : null;
+}
+
+function renderDevice() {
+  const device = deviceInfo();
+  el.deviceBlock.hidden = !device;
+  document.body.classList.toggle("device", Boolean(device));
+  if (!device) return;
+
+  const wifi = device.accessPoint
+    ? t("device.accessPoint", { ssid: device.accessPointSsid })
+    : device.wifiSsid
+      ? t("device.connected", { ssid: device.wifiSsid, rssi: device.wifiRssi })
+      : t("device.notConnected");
+  el.deviceWifiHint.textContent = device.wifiError ? `${wifi} · ${device.wifiError}` : wifi;
+
+  const hours = Math.floor((device.uptimeS || 0) / 3600);
+  const minutes = Math.floor(((device.uptimeS || 0) % 3600) / 60);
+  const display = device.display && device.display.available
+    ? t("device.display", { sda: device.display.sda, scl: device.display.scl })
+    : t("device.noDisplay");
+  el.deviceInfo.textContent = t("device.stats", {
+    version: `${device.version}${device.build ? ` b${device.build}` : ""}`,
+    platform: device.platform,
+    address: device.accessPoint ? device.accessPointSsid : (device.hostname || device.ip),
+    uptime: `${hours} h ${minutes} min`,
+    heap: Math.round((device.heap || 0) / 1024),
+    display,
+  });
+  el.deviceInfo.title = device.ip || "";
+
+  // What is kept in flash, so the size limit is visible and not a surprise.
+  const storedMax = Number(device.historyStoredCapacity) || 0;
+  if (storedMax > 0) {
+    el.deviceInfo.textContent += ` · ${t("device.stored", {
+      stored: Number(device.historyStored) || 0,
+      max: storedMax,
+      kb: Math.round((Number(device.historyBytes) || 0) / 1024),
+    })}`;
+  }
+
+  // The console switch and the read API hint describe a computer on the
+  // desktop build; on the device they mean something else.
+  const consoleLabel = document.querySelector('[data-i18n="settings.console"]');
+  const consoleHint = document.querySelector('[data-i18n="settings.consoleHint"]');
+  if (consoleLabel) consoleLabel.textContent = t("device.console");
+  if (consoleHint) consoleHint.textContent = t("device.consoleHint");
+}
+
+// The device scans the networks only when asked: the radio is busy with the
+// battery.
+async function scanNetworks() {
+  el.deviceWifiForm.hidden = false;
+  el.deviceWifiList.innerHTML = `<option value="">${t("device.scanning")}</option>`;
+  try {
+    const response = await fetch("/api/wifi?scan=1");
+    const data = await response.json();
+    const networks = (data && data.networks) || [];
+    el.deviceWifiList.innerHTML = networks
+      .sort((left, right) => right.rssi - left.rssi)
+      .map((network) => `<option value="${escapeHtml(network.ssid)}">${escapeHtml(network.ssid)} · ${network.rssi} dBm${network.secure ? " 🔒" : ""}</option>`)
+      .join("");
+    if (!networks.length) {
+      el.deviceWifiList.innerHTML = `<option value="">${t("device.noNetworks")}</option>`;
+    }
+  } catch (error) {
+    el.deviceWifiList.innerHTML = `<option value="">${escapeHtml(String(error))}</option>`;
+  }
+}
+
+async function joinNetwork() {
+  const ssid = el.deviceWifiSsid.value.trim() || el.deviceWifiList.value;
+  if (!ssid) return;
+  el.deviceState.hidden = false;
+  el.deviceState.textContent = t("device.joining", { ssid });
+  try {
+    const response = await fetch("/api/wifi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ssid, password: el.deviceWifiPassword.value }),
+    });
+    if (!response.ok) throw new Error((await response.text()).trim());
+    el.deviceState.textContent = t("device.joined");
+  } catch (error) {
+    el.deviceState.textContent = t("device.joinFailed", { error: String(error) });
+  }
+}
+
+// The firmware upload goes through XMLHttpRequest: fetch still cannot report
+// how much of the file has been sent.
+function uploadFirmware(file) {
+  if (!file) return;
+  el.deviceState.hidden = false;
+  el.deviceProgress.hidden = false;
+  el.deviceProgress.firstElementChild.style.width = "0%";
+  el.deviceState.textContent = t("device.uploading");
+
+  const body = new FormData();
+  body.append("firmware", file);
+  const request = new XMLHttpRequest();
+  request.open("POST", "/api/ota");
+  request.upload.onprogress = (event) => {
+    if (!event.lengthComputable) return;
+    const percent = Math.round((event.loaded / event.total) * 100);
+    el.deviceProgress.firstElementChild.style.width = `${percent}%`;
+    el.deviceState.textContent = t("device.uploadingPercent", { percent });
+  };
+  request.onload = () => {
+    el.deviceProgress.hidden = true;
+    el.deviceState.textContent = request.status === 200
+      ? t("device.uploadDone")
+      : t("device.uploadFailed", { error: request.responseText || `HTTP ${request.status}` });
+  };
+  request.onerror = () => {
+    el.deviceProgress.hidden = true;
+    el.deviceState.textContent = t("device.uploadFailed", { error: "network" });
+  };
+  request.send(body);
+}
+
+async function restartDevice() {
+  el.deviceState.hidden = false;
+  el.deviceState.textContent = t("device.restarting");
+  try {
+    await fetch("/api/reboot", { method: "POST" });
+  } catch (error) {
+    /* the device is on its way down: the connection drops, that is expected */
+  }
+}
+
+el.deviceWifiScan.addEventListener("click", scanNetworks);
+el.deviceWifiList.addEventListener("change", () => {
+  el.deviceWifiSsid.value = el.deviceWifiList.value;
+});
+el.deviceWifiSave.addEventListener("click", joinNetwork);
+el.deviceOta.addEventListener("click", () => el.deviceFirmware.click());
+el.deviceFirmware.addEventListener("change", () => {
+  uploadFirmware(el.deviceFirmware.files && el.deviceFirmware.files[0]);
+  el.deviceFirmware.value = "";
+});
+el.deviceReboot.addEventListener("click", restartDevice);
+
 function updateApiHint() {  if (!el.apiToggle.checked) {
     el.apiHint.textContent = t("settings.apiDisabled");
+    return;
+  }
+  if (deviceInfo()) {
+    // The device serves its own interface, so there is no second computer to
+    // point at: the address in the browser is the address of the endpoint.
+    el.apiHint.textContent = t("device.apiUrl", { url: `${location.origin}/api/batteries` });
     return;
   }
   const network = ((state && state.config && state.config.network) || []).map(
@@ -1019,6 +1274,12 @@ function renderCards() {
               </div>
               <span class="card-addr mono">${escapeHtml(battery.addr)}</span>
             </div>
+            <div class="card-icons">
+              <button class="card-action card-icon" type="button" data-connect="1"
+                      title="${escapeHtml(t("card.forceConnect"))}"
+                      aria-label="${escapeHtml(t("card.forceConnect"))}">${forceIconMarkup()}</button>
+              <span class="card-status card-icon" role="img" hidden>${statusIconMarkup()}</span>
+            </div>
             <div class="card-badges">
               <span class="chip badge ${protocolBadgeClass(battery.protocol)}">${escapeHtml(protocol)}</span>
               ${manualChip}
@@ -1073,14 +1334,21 @@ function renderCards() {
     }
 
     const meta = card.querySelector(".card-meta");
+    const status = card.querySelector(".card-status");
     if (online) {
       meta.textContent = `RSSI ${battery.rssi} dBm`;
     } else {
+      // A battery that is asleep or held by another device: the icon carries
+      // the state, the tooltip spells it out.
       const minutes = minutesSince(battery.lastSeen);
-      meta.textContent = minutes === null || minutes > 24 * 60
+      const text = minutes === null || minutes > 24 * 60
         ? t("card.offlineNow")
         : t("card.offline", { n: minutes });
+      meta.textContent = "";
+      status.title = text;
+      status.setAttribute("aria-label", text);
     }
+    status.hidden = online;
     card.classList.toggle("offline", !online);
     card.classList.toggle("pinned", battery.addr === pinnedAddress);
   }
@@ -1149,7 +1417,30 @@ function wireCards() {
       chooseDevice(address);
       renderCards();
     });
+    const force = card.querySelector(".card-action");
+    if (force) {
+      // The card itself opens the details, so this button must not do that too.
+      force.addEventListener("click", (event) => {
+        event.stopPropagation();
+        forceConnect(address);
+      });
+    }
   });
+}
+
+// forceConnect asks the device to go straight at this battery: useful while the
+// BMS is asleep or another device holds it and it does not advertise.
+async function forceConnect(address) {
+  if (!hasDevice()) return;
+  try {
+    await fetch("/api/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addr: address }),
+    });
+  } catch (error) {
+    /* the device owns the radio; nothing useful to report from here */
+  }
 }
 
 function chooseDevice(address) {
@@ -1433,10 +1724,19 @@ function renderFlags(sample) {
   if (sample.balancer != null) flag(t("flags.balancer"), sample.balancer);
   if (sample.problemCode != null) {
     const problems = Number(sample.problemCode);
-    flags.push(
-      `<span class="flag ${problems === 0 ? "on" : "warn"}">` +
-      `${problems === 0 ? escapeHtml(t("flags.noProblems")) : escapeHtml(t("flags.problems", { code: problems.toString(16).toUpperCase() }))}</span>`
-    );
+    if (problems === 0) {
+      flags.push(`<span class="flag on">${escapeHtml(t("flags.noProblems"))}</span>`);
+    } else {
+      // The names come from the service, so the list says what tripped instead
+      // of a hex number the user has to decode.
+      const names = Array.isArray(sample.problems) && sample.problems.length
+        ? sample.problems
+        : [t("flags.problems", { code: problems.toString(16).toUpperCase() })];
+      flags.push(
+        `<span class="flag warn" title="0x${problems.toString(16).toUpperCase()}">` +
+        `${escapeHtml(names.join(" · "))}</span>`
+      );
+    }
   }
   el.flags.innerHTML = flags.join("");
 }
@@ -1676,9 +1976,16 @@ function renderChrome() {
     ? t("status.samples", { n: samples })
     : t("status.samplesEmpty");
   el.statusHistory.title = state.config.dataDir || "";
-  el.statusVersion.textContent = `v${state.config.version}`;
+  // The version and the build number are both shown: every firmware change
+  // gets a new build number, so it is obvious on the page which one is running.
+  const build = state.config.build ? ` · b${state.config.build}` : "";
+  el.statusVersion.textContent = `v${state.config.version}${build}`;
   el.statusVersion.title = `${state.config.platform} · ${state.config.dataDir || ""}`;
   applyRemote();
+  // The device block is refreshed with every state call: the body class it sets
+  // hides the window buttons and the settings that only make sense on a
+  // computer, so the interface looks right from the first paint.
+  renderDevice();
 
   const mqttSettings = (state.config.settings && state.config.settings.mqtt) || null;
   if (mqttSettings && mqttSettings.enabled) {

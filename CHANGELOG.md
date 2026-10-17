@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* MQTT to Home Assistant now publishes every voltage and current with three
+  decimals (`x.xxx`), one sensor per cell, the raw `voltage_mv`/`current_ma`,
+  the problem code as a number, as `0x…` and as readable names, and a
+  `lifepo4bms/<address>/problems` message that fires whenever the code changes,
+  so a fault can be turned into a notification.
+* Per-battery availability (`lifepo4bms/<address>/status`): a battery that stops
+  answering shows as unavailable in Home Assistant instead of holding on to its
+  last reading.
+* ESP32-C3 build of the whole application (`esp32/ESP32C3-OLED042`): same
+  interface and API on port 80, OLED status screens, setup access point,
+  Bluetooth reading, MQTT with discovery, readings kept in a fixed-size flash
+  file and updates over the air — firmware and interface files alike.
 * Automatic monitoring: the application connects to the best available battery
   on its own as soon as one shows up in the list, retries failed connections
   after 2 s (then every 12 s) and reports the attempt number in the interface.

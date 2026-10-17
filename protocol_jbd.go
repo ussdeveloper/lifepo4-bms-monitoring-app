@@ -182,6 +182,7 @@ func decodeJBDSnapshot(basic, cells []byte) (*Sample, error) {
 
 	protection := binary.BigEndian.Uint16(basic[0x10:0x12])
 	sample.ProblemCode = uint32Ptr(uint32(protection))
+	sample.Problems = problemNames(uint32(protection))
 
 	cellCount := int(basic[0x15])
 	sensorCount := int(basic[0x16])

@@ -30,6 +30,13 @@ type mqttPublisher struct {
 
 	availability      bool
 	knownAvailability bool
+	// online is the availability published per battery, seenAt when its last
+	// reading arrived. A battery that stops answering is marked offline.
+	online map[string]bool
+	seenAt map[string]time.Time
+	// problem is the last problem code published as news for a battery.
+	problem      map[string]uint32
+	problemKnown map[string]bool
 }
 
 func newMQTTPublisher(settings *Settings, store *Store, version string) *mqttPublisher {
@@ -107,6 +114,7 @@ func (p *mqttPublisher) sync() {
 		}
 	}
 	p.setAvailability(config, true)
+	p.refreshAvailability(config, batteries)
 }
 
 func (p *mqttPublisher) connect(config mqttSettings) error {
@@ -146,6 +154,8 @@ func (p *mqttPublisher) disconnect() {
 	p.pubList = ""
 	p.availability = false
 	p.knownAvailability = false
+	p.online = map[string]bool{}
+	p.seenAt = map[string]time.Time{}
 	p.mu.Unlock()
 	if client == nil {
 		return
@@ -167,6 +177,123 @@ func (p *mqttPublisher) publishState(battery storeDevice) {
 		return
 	}
 	client.Publish(p.topic(config, mqttSlug(battery.Address)+"/state"), 0, true, payload)
+	p.publishProblemNews(config, client, battery)
+	p.markOnline(config, client, battery.Address, true)
+}
+
+// publishProblemNews sends the problem code and its name as its own message
+// whenever it changes, so Home Assistant can notify on a new fault instead of
+// polling a sensor.
+func (p *mqttPublisher) publishProblemNews(config mqttSettings, client mqtt.Client, battery storeDevice) {
+	sample := battery.LastSample
+	if sample == nil {
+		return
+	}
+	code := uint32(0)
+	if sample.ProblemCode != nil {
+		code = *sample.ProblemCode
+	}
+	p.mu.Lock()
+	if p.problem == nil {
+		p.problem = map[string]uint32{}
+	}
+	if p.problemKnown == nil {
+		p.problemKnown = map[string]bool{}
+	}
+	changed := !p.problemKnown[battery.Address] || p.problem[battery.Address] != code
+	p.problem[battery.Address] = code
+	p.problemKnown[battery.Address] = true
+	p.mu.Unlock()
+	if !changed {
+		return
+	}
+	message := map[string]any{
+		"address": battery.Address,
+		"name":    nonEmpty(battery.Name, battery.Model),
+		"code":    code,
+		"hex":     fmt.Sprintf("0x%08X", code),
+		"text":    problemSummary(code),
+		"count":   problemCount(code),
+		"active":  code != 0,
+		"time":    sample.Timestamp,
+	}
+	body, err := json.Marshal(message)
+	if err != nil {
+		return
+	}
+	client.Publish(p.topic(config, mqttSlug(battery.Address)+"/problems"), 1, false, body)
+	if code != 0 {
+		log.Printf("MQTT: %s: problem %s (%s)", battery.Address, fmt.Sprintf("0x%08X", code), problemSummary(code))
+	}
+}
+
+// markOnline publishes the per-battery availability topic, and only when it
+// changes, so Home Assistant shows a battery that stopped answering as
+// unavailable instead of holding on to the last reading.
+func (p *mqttPublisher) markOnline(config mqttSettings, client mqtt.Client, address string, online bool) {
+	if address == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.online == nil {
+		p.online = map[string]bool{}
+	}
+	if p.seenAt == nil {
+		p.seenAt = map[string]time.Time{}
+	}
+	already := p.online[address]
+	if online {
+		p.seenAt[address] = time.Now()
+	}
+	if already == online {
+		p.mu.Unlock()
+		return
+	}
+	p.online[address] = online
+	p.mu.Unlock()
+	state := "offline"
+	if online {
+		state = "online"
+	}
+	client.Publish(p.topic(config, mqttSlug(address)+"/status"), 1, true, state)
+}
+
+// refreshAvailability marks batteries that stopped reporting as offline.
+func (p *mqttPublisher) refreshAvailability(config mqttSettings, batteries []storeDevice) {
+	p.mu.Lock()
+	client := p.client
+	stale := make([]string, 0, len(p.online))
+	for address, online := range p.online {
+		if !online {
+			continue
+		}
+		if seen, known := p.seenAt[address]; known && time.Since(seen) > 60*time.Second {
+			stale = append(stale, address)
+		}
+	}
+	p.mu.Unlock()
+	if client == nil {
+		return
+	}
+	for _, address := range stale {
+		p.markOnline(config, client, address, false)
+	}
+	// A battery removed from the list must not stay "online" in the broker.
+	present := map[string]bool{}
+	for _, battery := range batteries {
+		present[battery.Address] = true
+	}
+	p.mu.Lock()
+	gone := make([]string, 0)
+	for address := range p.online {
+		if !present[address] {
+			gone = append(gone, address)
+		}
+	}
+	p.mu.Unlock()
+	for _, address := range gone {
+		p.markOnline(config, client, address, false)
+	}
 }
 
 func (p *mqttPublisher) publishDiscovery(config mqttSettings, batteries []storeDevice) {
@@ -220,7 +347,12 @@ func mqttSignature(config mqttSettings) string {
 func batteryListSignature(batteries []storeDevice) string {
 	parts := make([]string, 0, len(batteries))
 	for _, battery := range batteries {
-		parts = append(parts, battery.Address+"|"+battery.Name+"|"+battery.Model+"|"+battery.Brand)
+		cells := 0
+		if battery.LastSample != nil {
+			cells = len(battery.LastSample.CellsMv)
+		}
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%d",
+			battery.Address, battery.Name, battery.Model, battery.Brand, cells))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, "#")
@@ -232,37 +364,76 @@ func mqttSlug(address string) string {
 }
 
 // statePayload is the JSON document published for every reading. Home Assistant
-// templates pick single fields out of it.
-type statePayload struct {
-	Address     string    `json:"address"`
-	Name        string    `json:"name"`
-	Model       string    `json:"model"`
-	Brand       string    `json:"brand"`
-	Protocol    string    `json:"protocol"`
-	Timestamp   time.Time `json:"timestamp"`
-	Voltage     float64   `json:"voltage"`
-	Current     float64   `json:"current"`
-	SoC         int       `json:"soc"`
-	SoH         *int      `json:"soh"`
-	RemainingAh float64   `json:"remaining_ah"`
-	DesignAh    float64   `json:"design_ah"`
-	Cycles      int       `json:"cycles"`
-	Cells       int       `json:"cells"`
-	CellMinV    float64   `json:"cell_min_v"`
-	CellMaxV    float64   `json:"cell_max_v"`
-	CellDeltaMv int       `json:"cell_delta_mv"`
-	TempMinC    float64   `json:"temp_min_c"`
-	TempMaxC    float64   `json:"temp_max_c"`
-	Charging    bool      `json:"charging"`
-	Discharging bool      `json:"discharging"`
-	Balancing   bool      `json:"balancing"`
-	Problem     uint32    `json:"problem"`
-	EtaMinutes  int       `json:"eta_min,omitempty"`
-	// BalanceMv is the spread between the cells and BalanceState tells whether
-	// that spread means anything at the current state of charge ("balanced",
-	// "phantom" or "imbalanced").
-	BalanceMv    int    `json:"balance_mv,omitempty"`
-	BalanceState string `json:"balance_state,omitempty"`
+// templates pick single fields out of it. It is a map because the per-cell keys
+// (cell_1, cell_2, …) depend on how many cells the battery has.
+type statePayload map[string]any
+
+// problemBit describes one protection bit of the status frame. The names are
+// what the interface and Home Assistant show, so a code never reaches the user
+// as a bare number.
+type problemBit struct {
+	mask uint32
+	name string
+}
+
+var problemBits = []problemBit{
+	{0x00000001, "cell over voltage"},
+	{0x00000002, "cell under voltage"},
+	{0x00000004, "pack over voltage"},
+	{0x00000008, "pack under voltage"},
+	{0x00000010, "charge over temperature"},
+	{0x00000020, "discharge over temperature"},
+	{0x00000040, "charge low temperature"},
+	{0x00000080, "discharge low temperature"},
+	{0x00000100, "charge over current"},
+	{0x00000200, "discharge over current"},
+	{0x00000400, "short circuit"},
+	{0x00000800, "AFE error"},
+	{0x00001000, "software lock"},
+}
+
+// problemNames lists the protections named by a problem code.
+func problemNames(code uint32) []string {
+	names := make([]string, 0, len(problemBits))
+	for _, bit := range problemBits {
+		if code&bit.mask != 0 {
+			names = append(names, bit.name)
+		}
+	}
+	return names
+}
+
+// problemSummary names the protections in a code, joined with ", ".
+func problemSummary(code uint32) string {
+	names := make([]string, 0, len(problemBits))
+	for _, bit := range problemBits {
+		if code&bit.mask != 0 {
+			names = append(names, bit.name)
+		}
+	}
+	if len(names) == 0 {
+		if code == 0 {
+			return "none"
+		}
+		return "unknown problem"
+	}
+	return strings.Join(names, ", ")
+}
+
+// problemCount is how many protections a code reports.
+func problemCount(code uint32) int {
+	count := 0
+	known := uint32(0)
+	for _, bit := range problemBits {
+		known |= bit.mask
+		if code&bit.mask != 0 {
+			count++
+		}
+	}
+	if code&^known != 0 {
+		count++
+	}
+	return count
 }
 
 func buildStatePayload(battery storeDevice) ([]byte, error) {
@@ -270,56 +441,71 @@ func buildStatePayload(battery storeDevice) ([]byte, error) {
 	if sample == nil {
 		return nil, fmt.Errorf("no reading available")
 	}
+	problem := uint32(0)
+	if sample.ProblemCode != nil {
+		problem = *sample.ProblemCode
+	}
 	payload := statePayload{
-		Address:     battery.Address,
-		Name:        battery.Name,
-		Model:       battery.Model,
-		Brand:       battery.Brand,
-		Protocol:    sample.Protocol,
-		Timestamp:   sample.Timestamp,
-		Voltage:     round(sample.VoltageV, 3),
-		Current:     round(sample.CurrentA, 3),
-		SoC:         sample.SoC,
-		SoH:         sample.SoH,
-		RemainingAh: round(sample.RemainingAh, 2),
-		DesignAh:    round(sample.DesignAh, 2),
-		Cycles:      sample.Cycles,
-		Cells:       len(sample.CellsMv),
-		Problem:     0,
+		"address":       battery.Address,
+		"name":          battery.Name,
+		"model":         battery.Model,
+		"brand":         battery.Brand,
+		"protocol":      sample.Protocol,
+		"timestamp":     sample.Timestamp,
+		"voltage":       round(sample.VoltageV, 3),
+		"voltage_mv":    int(math.Round(sample.VoltageV * 1000)),
+		"current":       round(sample.CurrentA, 3),
+		"current_ma":    int(math.Round(sample.CurrentA * 1000)),
+		"soc":           sample.SoC,
+		"remaining_ah":  round(sample.RemainingAh, 2),
+		"design_ah":     round(sample.DesignAh, 2),
+		"cycles":        sample.Cycles,
+		"cells":         len(sample.CellsMv),
+		"problem":       problem,
+		"problem_hex":   fmt.Sprintf("0x%08X", problem),
+		"problem_text":  problemSummary(problem),
+		"problem_count": problemCount(problem),
+		// problem_active is what an automation should trigger on.
+		"problem_active": problem != 0,
+	}
+	if sample.SoH != nil {
+		payload["soh"] = *sample.SoH
+	}
+	// One key per cell, with the full millivolt resolution of the BMS: three
+	// decimals is exactly what the reading carries, one decimal is not.
+	for index, millivolts := range sample.CellsMv {
+		payload[fmt.Sprintf("cell_%d", index+1)] = round(float64(millivolts)/1000, 3)
 	}
 	if minimum := minCell(sample.CellsMv); minimum != nil {
-		payload.CellMinV = round(float64(*minimum)/1000, 3)
+		payload["cell_min_v"] = round(float64(*minimum)/1000, 3)
 	}
 	if maximum := maxCell(sample.CellsMv); maximum != nil {
-		payload.CellMaxV = round(float64(*maximum)/1000, 3)
+		payload["cell_max_v"] = round(float64(*maximum)/1000, 3)
 	}
 	if minimum, maximum := minCell(sample.CellsMv), maxCell(sample.CellsMv); minimum != nil && maximum != nil {
-		payload.CellDeltaMv = *maximum - *minimum
+		payload["cell_delta_mv"] = *maximum - *minimum
 	}
 	if minimum := minTemp(sample.TemperaturesC); minimum != nil {
-		payload.TempMinC = round(*minimum, 1)
+		payload["temp_min_c"] = round(*minimum, 1)
 	}
 	if maximum := maxTemp(sample.TemperaturesC); maximum != nil {
-		payload.TempMaxC = round(*maximum, 1)
+		payload["temp_max_c"] = round(*maximum, 1)
 	}
 	if sample.ChargingMosfet != nil {
-		payload.Charging = *sample.ChargingMosfet
+		payload["charging"] = *sample.ChargingMosfet
 	}
 	if sample.DischargingMosfet != nil {
-		payload.Discharging = *sample.DischargingMosfet
+		payload["discharging"] = *sample.DischargingMosfet
 	}
 	if sample.Balancer != nil {
-		payload.Balancing = *sample.Balancer
-	}
-	if sample.ProblemCode != nil {
-		payload.Problem = *sample.ProblemCode
+		payload["balancing"] = *sample.Balancer
 	}
 	if sample.EtaS > 0 {
-		payload.EtaMinutes = int(sample.EtaS / 60)
+		payload["eta_min"] = int(sample.EtaS / 60)
 	}
 	if sample.Balance != nil {
-		payload.BalanceMv = sample.Balance.SpreadMv
-		payload.BalanceState = sample.Balance.State
+		payload["balance_mv"] = sample.Balance.SpreadMv
+		payload["balance_state"] = sample.Balance.State
 	}
 	return json.Marshal(payload)
 }
@@ -333,26 +519,38 @@ type discoveryEntity struct {
 	unit        string
 	deviceClass string
 	icon        string
+	// precision becomes suggested_display_precision. Home Assistant's own
+	// default for volts is zero decimals, which turns 3.451 V into "3 V".
+	precision int
+	// numeric is false for a text sensor, which must not claim state_class.
+	numeric bool
 }
 
 var discoveryEntities = []discoveryEntity{
-	{component: "sensor", objectID: "soc", name: "State of charge", template: "{{ value_json.soc }}", unit: "%", deviceClass: "battery"},
-	{component: "sensor", objectID: "voltage", name: "Voltage", template: "{{ value_json.voltage }}", unit: "V", deviceClass: "voltage"},
-	{component: "sensor", objectID: "current", name: "Current", template: "{{ value_json.current }}", unit: "A", deviceClass: "current"},
-	{component: "sensor", objectID: "remaining", name: "Remaining capacity", template: "{{ value_json.remaining_ah }}", unit: "Ah"},
-	{component: "sensor", objectID: "design", name: "Design capacity", template: "{{ value_json.design_ah }}", unit: "Ah"},
-	{component: "sensor", objectID: "cycles", name: "Cycles", template: "{{ value_json.cycles }}"},
-	{component: "sensor", objectID: "cell_min", name: "Cell voltage minimum", template: "{{ value_json.cell_min_v }}", unit: "V", deviceClass: "voltage"},
-	{component: "sensor", objectID: "cell_max", name: "Cell voltage maximum", template: "{{ value_json.cell_max_v }}", unit: "V", deviceClass: "voltage"},
-	{component: "sensor", objectID: "cell_delta", name: "Cell voltage spread", template: "{{ value_json.cell_delta_mv }}", unit: "mV"},
+	{component: "sensor", objectID: "soc", name: "State of charge", template: "{{ value_json.soc }}", unit: "%", deviceClass: "battery", numeric: true},
+	{component: "sensor", objectID: "voltage", name: "Voltage", template: "{{ value_json.voltage }}", unit: "V", deviceClass: "voltage", precision: 3, numeric: true},
+	{component: "sensor", objectID: "voltage_mv", name: "Voltage (mV)", template: "{{ value_json.voltage_mv }}", unit: "mV", deviceClass: "voltage", numeric: true},
+	{component: "sensor", objectID: "current", name: "Current", template: "{{ value_json.current }}", unit: "A", deviceClass: "current", precision: 3, numeric: true},
+	{component: "sensor", objectID: "current_ma", name: "Current (mA)", template: "{{ value_json.current_ma }}", unit: "mA", deviceClass: "current", numeric: true},
+	{component: "sensor", objectID: "remaining", name: "Remaining capacity", template: "{{ value_json.remaining_ah }}", unit: "Ah", precision: 2, numeric: true},
+	{component: "sensor", objectID: "design", name: "Design capacity", template: "{{ value_json.design_ah }}", unit: "Ah", precision: 2, numeric: true},
+	{component: "sensor", objectID: "cycles", name: "Cycles", template: "{{ value_json.cycles }}", numeric: true},
+	{component: "sensor", objectID: "cell_min", name: "Cell voltage minimum", template: "{{ value_json.cell_min_v }}", unit: "V", deviceClass: "voltage", precision: 3, numeric: true},
+	{component: "sensor", objectID: "cell_max", name: "Cell voltage maximum", template: "{{ value_json.cell_max_v }}", unit: "V", deviceClass: "voltage", precision: 3, numeric: true},
+	{component: "sensor", objectID: "cell_delta", name: "Cell voltage spread", template: "{{ value_json.cell_delta_mv }}", unit: "mV", numeric: true},
 	{component: "sensor", objectID: "balance_state", name: "Cell balance", template: "{{ value_json.balance_state }}", icon: "mdi:scale-balance"},
-	{component: "sensor", objectID: "temp_min", name: "Temperature minimum", template: "{{ value_json.temp_min_c }}", unit: "\u00b0C", deviceClass: "temperature"},
-	{component: "sensor", objectID: "temp_max", name: "Temperature maximum", template: "{{ value_json.temp_max_c }}", unit: "\u00b0C", deviceClass: "temperature"},
-	{component: "sensor", objectID: "problems", name: "Problem codes", template: "{{ value_json.problem }}"},
-	{component: "sensor", objectID: "eta", name: "Time to full or empty", template: "{{ value_json.eta_min }}", unit: "min", deviceClass: "duration"},
+	{component: "sensor", objectID: "balance_mv", name: "Cell balance window", template: "{{ value_json.balance_mv }}", unit: "mV", numeric: true},
+	{component: "sensor", objectID: "temp_min", name: "Temperature minimum", template: "{{ value_json.temp_min_c }}", unit: "\u00b0C", deviceClass: "temperature", precision: 1, numeric: true},
+	{component: "sensor", objectID: "temp_max", name: "Temperature maximum", template: "{{ value_json.temp_max_c }}", unit: "\u00b0C", deviceClass: "temperature", precision: 1, numeric: true},
+	{component: "sensor", objectID: "problems", name: "Problem codes", template: "{{ value_json.problem }}", icon: "mdi:alert-circle-outline", numeric: true},
+	{component: "sensor", objectID: "problem_hex", name: "Problem code (hex)", template: "{{ value_json.problem_hex }}", icon: "mdi:alert-circle-outline"},
+	{component: "sensor", objectID: "problem_text", name: "Problems", template: "{{ value_json.problem_text }}", icon: "mdi:alert-circle-outline"},
+	{component: "sensor", objectID: "problem_count", name: "Problem count", template: "{{ value_json.problem_count }}", icon: "mdi:counter", numeric: true},
+	{component: "sensor", objectID: "eta", name: "Time to full or empty", template: "{{ value_json.eta_min }}", unit: "min", deviceClass: "duration", numeric: true},
 	{component: "binary_sensor", objectID: "charging", name: "Charging", template: "{{ value_json.charging }}", deviceClass: "battery_charging"},
 	{component: "binary_sensor", objectID: "discharging", name: "Discharging", template: "{{ value_json.discharging }}", deviceClass: "power"},
 	{component: "binary_sensor", objectID: "balancing", name: "Balancing", template: "{{ value_json.balancing }}"},
+	{component: "binary_sensor", objectID: "problem_active", name: "Problem active", template: "{{ value_json.problem_active }}", deviceClass: "problem"},
 }
 
 // buildDiscoveryPayloads returns topic -> payload for every Home Assistant
@@ -361,7 +559,20 @@ func buildDiscoveryPayloads(battery storeDevice, config mqttSettings, version st
 	slug := mqttSlug(battery.Address)
 	node := config.TopicPrefix + "_" + slug
 	stateTopic := config.TopicPrefix + "/" + slug + "/state"
-	availabilityTopic := config.TopicPrefix + "/status"
+	// Two availability topics: the application itself (gone when it stops, via
+	// the last will) and the battery (offline while the BMS does not answer).
+	availability := []map[string]any{
+		{
+			"topic":                 config.TopicPrefix + "/status",
+			"payload_available":     "online",
+			"payload_not_available": "offline",
+		},
+		{
+			"topic":                 config.TopicPrefix + "/" + slug + "/status",
+			"payload_available":     "online",
+			"payload_not_available": "offline",
+		},
+	}
 	name := strings.TrimSpace(battery.Name)
 	if name == "" {
 		name = "BMS " + battery.Address
@@ -379,34 +590,55 @@ func buildDiscoveryPayloads(battery storeDevice, config mqttSettings, version st
 	}
 
 	payloads := map[string][]byte{}
-	for _, entity := range discoveryEntities {
+
+	// announce adds one entity message to the result.
+	announce := func(component, objectID, label, template, unit, deviceClass, icon string, precision int, numeric bool) {
 		message := map[string]any{
-			"name":                  entity.name,
-			"unique_id":             node + "_" + entity.objectID,
-			"object_id":             node + "_" + entity.objectID,
-			"state_topic":           stateTopic,
-			"value_template":        entity.template,
-			"availability_topic":    availabilityTopic,
-			"payload_available":     "online",
-			"payload_not_available": "offline",
-			"device":                device,
+			"name":           label,
+			"unique_id":      node + "_" + objectID,
+			"object_id":      node + "_" + objectID,
+			"state_topic":    stateTopic,
+			"value_template": template,
+			"availability":   availability,
+			"device":         device,
 		}
-		if entity.unit != "" {
-			message["unit_of_measurement"] = entity.unit
+		if unit != "" {
+			message["unit_of_measurement"] = unit
 		}
-		if entity.deviceClass != "" {
-			message["device_class"] = entity.deviceClass
+		if deviceClass != "" {
+			message["device_class"] = deviceClass
 		}
-		if entity.component == "sensor" {
+		// A text sensor has no state_class; everything numeric here does.
+		if component == "sensor" && numeric {
 			message["state_class"] = "measurement"
+		}
+		if icon != "" {
+			message["icon"] = icon
+		}
+		if precision > 0 && numeric {
+			message["suggested_display_precision"] = precision
 		}
 		data, err := json.Marshal(message)
 		if err != nil {
-			continue
+			return
 		}
-		topic := fmt.Sprintf("%s/%s/%s/%s/config",
-			config.DiscoveryPrefix, entity.component, node, entity.objectID)
-		payloads[topic] = data
+		payloads[fmt.Sprintf("%s/%s/%s/%s/config",
+			config.DiscoveryPrefix, component, node, objectID)] = data
+	}
+
+	for _, entity := range discoveryEntities {
+		announce(entity.component, entity.objectID, entity.name, entity.template,
+			entity.unit, entity.deviceClass, entity.icon, entity.precision, entity.numeric)
+	}
+
+	// One sensor per cell: Home Assistant charts every cell on its own, with the
+	// three decimals the BMS actually measures.
+	if battery.LastSample != nil {
+		for index := range battery.LastSample.CellsMv {
+			objectID := fmt.Sprintf("cell_%d", index+1)
+			announce("sensor", objectID, fmt.Sprintf("Cell %d voltage", index+1),
+				"{{ value_json."+objectID+" }}", "V", "voltage", "", 3, true)
+		}
 	}
 	return payloads
 }

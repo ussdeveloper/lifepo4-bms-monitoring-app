@@ -359,7 +359,7 @@
         </div>
       </div>
 
-      <div class="setting">
+      <div class="setting" id="db-setting">
         <div class="setting-text">
           <span class="setting-label" data-i18n="settings.store">Cell history database</span>
           <span class="muted" data-i18n="settings.storeHint">Store every reading with all cell voltages in a SQLite file, so the cells can be charted over hours, days or months. Download it as a backup or merge a backup back in.</span>
@@ -369,7 +369,7 @@
         </div>
       </div>
 
-      <div class="db-row">
+      <div class="db-row" id="db-row">
         <span class="mono" id="db-stats">–</span>
         <span class="db-actions">
           <a class="pill pill-small" id="db-export" data-i18n="settings.storeExport" href="/api/db/export" download>Download backup</a>
@@ -378,6 +378,36 @@
         </span>
       </div>
       <p class="db-state muted" id="db-state" hidden></p>
+
+      <!-- Only on a device that runs this interface itself (the ESP32 build):
+           Wi-Fi, firmware updates and the hardware around them. -->
+      <div class="device-block" id="device-block" hidden>
+        <div class="setting">
+          <div class="setting-text">
+            <span class="setting-label" data-i18n="device.wifi">Wi-Fi network</span>
+            <span class="muted" id="device-wifi-hint">–</span>
+          </div>
+          <div class="setting-control">
+            <button class="pill pill-small" id="device-wifi-scan" type="button" data-i18n="device.scan">Scan</button>
+          </div>
+        </div>
+        <div class="device-wifi" id="device-wifi-form" hidden>
+          <select id="device-wifi-list" class="text"></select>
+          <input type="text" id="device-wifi-ssid" class="text" spellcheck="false" autocomplete="off" data-i18n-title="device.ssid" placeholder="SSID">
+          <input type="password" id="device-wifi-password" class="text" autocomplete="off" data-i18n-title="device.password" placeholder="password">
+          <button class="pill pill-small" id="device-wifi-save" type="button" data-i18n="device.join">Join</button>
+        </div>
+        <div class="db-row">
+          <span class="mono" id="device-info">–</span>
+          <span class="db-actions">
+            <input type="file" id="device-firmware" accept=".bin,application/octet-stream" hidden>
+            <button class="pill pill-small" id="device-ota" type="button" data-i18n="device.upload">Update firmware</button>
+            <button class="pill pill-small" id="device-reboot" type="button" data-i18n="device.restart">Restart</button>
+          </span>
+        </div>
+        <div class="ota-progress" id="device-progress" hidden><span></span></div>
+        <p class="db-state muted" id="device-state" hidden></p>
+      </div>
 
       <div class="setting">
         <div class="setting-text">
@@ -389,7 +419,7 @@
         </div>
       </div>
 
-      <div class="setting">
+      <div class="setting" id="radios-setting">
         <div class="setting-text">
           <span class="setting-label" data-i18n="settings.radios">Bluetooth radios</span>
           <span class="muted" id="radios-hint" data-i18n="settings.radiosHint">Windows scans with the default radio. A battery that only another radio sees can be added by its address.</span>

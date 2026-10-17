@@ -1,0 +1,18 @@
+# 4 MB flash: two application slots (an over the air update keeps the running
+# image until the new one is complete), a small NVS area and the interface
+# files in a LittleFS partition.
+#
+# The interface (ui/ of the main project, ~130 KB) shares the flash with two
+# copies of the firmware, so both slots get 1.75 MB: Wi-Fi, Bluetooth and the
+# web server together are already well over a megabyte.
+#
+# The filesystem partition is labelled "spiffs" on purpose: that is the name the
+# Arduino core mounts by default (a LittleFS lives in it).
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x1c0000,
+app1,       app,  ota_1,    0x1d0000, 0x1c0000,
+spiffs,     data, spiffs,   0x390000, 0x60000,
+coredump,   data, coredump, 0x3f0000, 0x10000,

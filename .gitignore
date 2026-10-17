@@ -18,3 +18,8 @@ venv/
 .idea/
 Thumbs.db
 desktop.ini
+
+# PlatformIO build output of the ESP32 sub project
+esp32/*/.pio/
+esp32/ESP32C3-OLED042/data/
+

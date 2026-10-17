@@ -454,6 +454,16 @@ body.remote .head-actions,
 body.remote #settings-toggle,
 body.remote #release-button { display: none; }
 
+/* On the device the interface runs in a browser or on a phone: the window
+   buttons make no sense, and the settings that describe a computer are hidden
+   by app.js (the database row, the radios row). */
+body.device .titlebar-buttons .win-button[data-action],
+body.device .titlebar-buttons .button-sep,
+body.device #db-setting,
+body.device #db-row,
+body.device #db-state,
+body.device #radios-setting { display: none; }
+
 /* Shown in the batteries tab while no battery has been found yet. */
 .list-empty {  margin: 4px 6px 0;
   padding: 16px;
@@ -524,11 +534,14 @@ body.remote #release-button { display: none; }
 
 .card {
   display: grid;
-  /* ident | protocol badge | state of charge (bar + value) | live values */
-  grid-template-columns: minmax(150px, 1.4fr) auto minmax(150px, 1fr) minmax(170px, auto);
+  /* ident | protocol badge | state of charge (bar + value) | live values.
+     The columns can shrink: on a narrow card the text is cut with an ellipsis
+     instead of running under the icons in the corner. */
+  grid-template-columns: minmax(0, 1.6fr) auto minmax(0, 1.1fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
-  padding: 10px 16px;
+  /* Room on the right for the icon column (connect / not in range). */
+  padding: 10px 42px 10px 16px;
   border-radius: 12px;
   cursor: pointer;
   transition: border-color var(--ease), box-shadow var(--ease), background var(--ease);
@@ -621,6 +634,47 @@ body.remote #release-button { display: none; }
 
 .card-addr { color: var(--ink-faint); font-size: 11.5px; }
 
+/* The cartouche of icons on a battery card: asking for a connection (device
+   only) and the "not in range" marker. Stacked, because the card is narrow. */
+.card-icons {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.card-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+}
+
+.card-icon svg { width: 14px; height: 14px; }
+
+.card-status { color: var(--ink-faint); }
+.card-status[hidden] { display: none; }
+.card.offline .card-status { color: #a8531f; }
+
+.card-action {
+  display: none;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease), background var(--ease);
+}
+
+.card-action:hover { color: #00706f; border-color: rgba(0, 194, 194, 0.6); background: rgba(0, 194, 194, 0.08); }
+.card-action:disabled { opacity: 0.4; cursor: default; }
+body.device .card-action { display: inline-flex; }
+
 .badge { font-size: 10.5px; padding: 4px 11px; letter-spacing: 1.6px; }
 
 /* Protocol badge and, for an address added by hand, the marker next to it. */
@@ -663,7 +717,18 @@ body.remote #release-button { display: none; }
   gap: 1px;
   color: var(--ink-soft);
   font-size: 12px;
+  /* The two lines are the widest part of the card: they are cut with an
+     ellipsis rather than pushed under the icons in the corner. */
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.card-foot > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
 }
@@ -1063,6 +1128,47 @@ body.remote #release-button { display: none; }
 
 .db-actions .pill.disabled { opacity: 0.45; pointer-events: none; }
 .db-state { margin: -6px 0 10px; font-size: 11.5px; }
+
+/* --- the device section (ESP32 build of the interface) --- */
+
+.device-block { border-top: 1px solid var(--glass-border); margin-top: 6px; padding-top: 10px; }
+
+.device-wifi {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: -4px 0 10px;
+}
+
+.device-wifi select,
+.device-wifi input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ota-progress {
+  height: 6px;
+  margin: -4px 0 10px;
+  border-radius: 999px;
+  background: rgba(0, 26, 77, 0.08);
+  overflow: hidden;
+}
+
+.ota-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--teal-dark), var(--teal));
+  transition: width 0.2s var(--ease);
+}
 
 .temps { display: flex; flex-wrap: wrap; gap: 8px; }
 

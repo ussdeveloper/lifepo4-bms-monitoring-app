@@ -82,6 +82,48 @@ func TestBuildStatePayload(t *testing.T) {
 	if payload["address"] != "11:22:33:44:55:66" || payload["model"] != "BMC-04S001" {
 		t.Errorf("metadata missing: %v / %v", payload["address"], payload["model"])
 	}
+	// The BMS measures in millivolts; a cell must reach Home Assistant with all
+	// three decimals, never rounded to 3.4 V.
+	cells := map[string]float64{
+		"cell_1": 3.362,
+		"cell_2": 3.362,
+		"cell_3": 3.363,
+		"cell_4": 3.359,
+	}
+	for key, want := range cells {
+		value, ok := payload[key].(float64)
+		if !ok {
+			t.Errorf("field %q missing: %v", key, payload[key])
+			continue
+		}
+		if value != want {
+			t.Errorf("field %q: got %v, want %v", key, value, want)
+		}
+	}
+	if payload["voltage_mv"] != float64(13450) {
+		t.Errorf("voltage_mv: %v", payload["voltage_mv"])
+	}
+	if payload["problem_text"] != "none" || payload["problem_active"] != false {
+		t.Errorf("problem fields: %v / %v", payload["problem_text"], payload["problem_active"])
+	}
+}
+
+func TestProblemNames(t *testing.T) {
+	if got := problemSummary(0); got != "none" {
+		t.Errorf("no problem: %q", got)
+	}
+	if got := problemSummary(0x03); got != "cell over voltage, cell under voltage" {
+		t.Errorf("two bits: %q", got)
+	}
+	if got := problemCount(0x03); got != 2 {
+		t.Errorf("count: %d", got)
+	}
+	if got := problemCount(0x80000000); got != 1 {
+		t.Errorf("unknown bit must still count: %d", got)
+	}
+	if got := problemSummary(0x80000000); got != "unknown problem" {
+		t.Errorf("unknown bit: %q", got)
+	}
 }
 
 func TestBuildStatePayloadWithoutSample(t *testing.T) {
@@ -100,8 +142,10 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 		DiscoveryPrefix: "homeassistant",
 	}
 	payloads := buildDiscoveryPayloads(sampleBattery(), config, "0.1.0")
-	if len(payloads) != len(discoveryEntities) {
-		t.Fatalf("expected %d discovery messages, got %d", len(discoveryEntities), len(payloads))
+	// Every entity of the table plus one per cell of the reading.
+	want := len(discoveryEntities) + 4
+	if len(payloads) != want {
+		t.Fatalf("expected %d discovery messages, got %d", want, len(payloads))
 	}
 
 	socTopic := "homeassistant/sensor/lifepo4bms_112233445566/soc/config"
@@ -119,8 +163,15 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 	if message["state_topic"] != "lifepo4bms/112233445566/state" {
 		t.Errorf("state_topic: %v", message["state_topic"])
 	}
-	if message["availability_topic"] != "lifepo4bms/status" {
-		t.Errorf("availability_topic: %v", message["availability_topic"])
+	// Both the application and the battery gate availability.
+	availability, ok := message["availability"].([]any)
+	if !ok || len(availability) != 2 {
+		t.Fatalf("availability: %+v", message["availability"])
+	}
+	first := availability[0].(map[string]any)
+	second := availability[1].(map[string]any)
+	if first["topic"] != "lifepo4bms/status" || second["topic"] != "lifepo4bms/112233445566/status" {
+		t.Errorf("availability topics: %+v / %+v", first["topic"], second["topic"])
 	}
 	if message["unit_of_measurement"] != "%" || message["device_class"] != "battery" {
 		t.Errorf("soc units: %v / %v", message["unit_of_measurement"], message["device_class"])
@@ -138,6 +189,35 @@ func TestBuildDiscoveryPayloads(t *testing.T) {
 	identifiers, ok := device["identifiers"].([]any)
 	if !ok || len(identifiers) != 1 || identifiers[0] != "lifepo4bms_112233445566" {
 		t.Errorf("device identifiers: %+v", device["identifiers"])
+	}
+
+	// A cell sensor must carry three decimals, or Home Assistant shows 3.3 V.
+	cellTopic := "homeassistant/sensor/lifepo4bms_112233445566/cell_3/config"
+	raw, ok = payloads[cellTopic]
+	if !ok {
+		t.Fatalf("missing cell discovery %s", cellTopic)
+	}
+	var cell map[string]any
+	if err := json.Unmarshal(raw, &cell); err != nil {
+		t.Fatalf("cell discovery is not valid JSON: %v", err)
+	}
+	if cell["suggested_display_precision"] != float64(3) {
+		t.Errorf("cell precision: %v", cell["suggested_display_precision"])
+	}
+	if cell["unit_of_measurement"] != "V" || cell["device_class"] != "voltage" {
+		t.Errorf("cell units: %v / %v", cell["unit_of_measurement"], cell["device_class"])
+	}
+	if cell["value_template"] != "{{ value_json.cell_3 }}" {
+		t.Errorf("cell template: %v", cell["value_template"])
+	}
+
+	voltageTopic := "homeassistant/sensor/lifepo4bms_112233445566/voltage/config"
+	var voltage map[string]any
+	if err := json.Unmarshal(payloads[voltageTopic], &voltage); err != nil {
+		t.Fatalf("voltage discovery is not valid JSON: %v", err)
+	}
+	if voltage["suggested_display_precision"] != float64(3) {
+		t.Errorf("voltage precision: %v", voltage["suggested_display_precision"])
 	}
 }
 

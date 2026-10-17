@@ -41,7 +41,6 @@ See [docs/protocols.md](docs/protocols.md) for the frame formats, checksums and
 how to add another BMS family.
 
 ## Repository layout
-
 ```
 main.go, hub.go, session.go   desktop application (Go, package main)
 protocol.go                   HS03/HiLink and HS04/WATT framing and decoding

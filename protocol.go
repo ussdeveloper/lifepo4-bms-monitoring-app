@@ -59,7 +59,10 @@ type Sample struct {
 	DischargingMosfet *bool     `json:"dischargingMosfet,omitempty"`
 	Balancer          *bool     `json:"balancer,omitempty"`
 	ProblemCode       *uint32   `json:"problemCode,omitempty"`
-	Timestamp         time.Time `json:"timestamp"`
+	// Problems names every bit set in ProblemCode, so the interface and the
+	// integrations never have to decode a hex number themselves.
+	Problems  []string  `json:"problems,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 	// Balance compares the cells of this reading (nil when there is only one
 	// cell or none).
 	Balance *Balance `json:"balance,omitempty"`
@@ -249,7 +252,7 @@ func decodeHS03Snapshot(analog, status, cells []byte) (*Sample, error) {
 		temperatures = append(temperatures, float64(int8(analog[20+i])))
 	}
 	problem := binary.LittleEndian.Uint32(status[4:8]) & 0xFF7F7F7F
-	return &Sample{
+	sample := &Sample{
 		Protocol:          "HS03/HiLink",
 		VoltageV:          float64(binary.LittleEndian.Uint32(analog[0:4])) / 1000,
 		CurrentA:          float64(int32(binary.LittleEndian.Uint32(analog[4:8]))) / 1000,
@@ -264,7 +267,9 @@ func decodeHS03Snapshot(analog, status, cells []byte) (*Sample, error) {
 		DischargingMosfet: boolPtr(status[6]&0x80 != 0),
 		Balancer:          boolPtr(status[5]&0x80 != 0),
 		ProblemCode:       uint32Ptr(problem),
-	}, nil
+	}
+	sample.Problems = problemNames(problem)
+	return sample, nil
 }
 
 func decodeHS03Model(payload []byte) string {
