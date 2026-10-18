@@ -68,6 +68,26 @@ brick it.
 >   .pio/build/esp32c3/firmware.bin     # the second slot, 0x10000 is the first
 > ```
 
+### Recovering a device that does not answer at all
+
+If the page, the API and the access point are all gone, the firmware is not
+running far enough to be updated over the air. Connect the cable and write a
+clean image over both slots, clearing the boot choice — the settings in NVS
+(Wi-Fi, MQTT, the battery list) are left alone, and the filesystem is written
+fresh so a wedged `stats.bin` is gone:
+
+```powershell
+$esptool = "$env:USERPROFILE\.platformio\packages\tool-esptoolpy\esptool.py"
+python $esptool --port COM5 --chip esp32c3 erase_region 0xe000 0x2000
+python $esptool --port COM5 --chip esp32c3 erase_region 0x3f0000 0x10000
+python $esptool --port COM5 --chip esp32c3 write_flash --flash_size keep `
+  0x10000  .pio/build/esp32c3/firmware.bin `
+  0x390000 .pio/build/esp32c3/littlefs.bin
+```
+
+Erasing `otadata` is what makes the bootloader start `app0` again; without it
+the device may keep booting the stale second slot.
+
 ## Setting it up
 
 1. The device starts the access point **`BATTERY-<number>`** (open, it exists
