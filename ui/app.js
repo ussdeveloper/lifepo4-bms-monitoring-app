@@ -1981,6 +1981,14 @@ function renderChrome() {
   const build = state.config.build ? ` · b${state.config.build}` : "";
   el.statusVersion.textContent = `v${state.config.version}${build}`;
   el.statusVersion.title = `${state.config.platform} · ${state.config.dataDir || ""}`;
+  // A device asks to be polled less often (its documents are a few kilobytes
+  // and it has 50 KB of heap); a computer keeps one second.
+  const wanted = Number(state.config.pollMs) || POLL_MS;
+  if (wanted !== pollInterval) {
+    pollInterval = wanted;
+    clearInterval(pollTimer);
+    pollTimer = setInterval(poll, pollInterval);
+  }
   applyRemote();
   // The device block is refreshed with every state call: the body class it sets
   // hides the window buttons and the settings that only make sense on a
@@ -2041,6 +2049,11 @@ el.deepscan.addEventListener("click", () => {
 document.addEventListener("contextmenu", (event) => event.preventDefault());
 document.addEventListener("dragstart", (event) => event.preventDefault());
 
+// The timer is restarted when the service reports a different poll interval: a
+// device serves the interface itself and asks to be asked less often.
+let pollInterval = POLL_MS;
+let pollTimer = null;
+
 applyStaticTranslations();
 poll();
-setInterval(poll, POLL_MS);
+pollTimer = setInterval(poll, POLL_MS);

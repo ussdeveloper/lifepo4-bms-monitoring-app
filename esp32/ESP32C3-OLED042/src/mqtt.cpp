@@ -317,6 +317,7 @@ void Mqtt::publish(const Monitor &monitor) {
         root["balance_state"] = sample.balance.state;
     }
     String payload;
+    payload.reserve(1024);
     serializeJson(document, payload);
     // Retained, exactly as the desktop application publishes it: Home Assistant
     // then has the last reading right after a restart instead of waiting.

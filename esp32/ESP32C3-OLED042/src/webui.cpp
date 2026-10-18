@@ -11,8 +11,12 @@ const uint32_t POWER_WINDOW_S = 600;  // the power graph shows ten minutes
 // The two charts are a few hundred pixels wide. Sending every stored reading
 // would build documents of tens of kilobytes on a device with 50 KB of heap, so
 // the points handed to the interface are spread evenly over the window.
-const size_t POWER_CHART_POINTS = 60;
+const size_t POWER_CHART_POINTS = 40;
 const size_t HISTORY_CHART_POINTS = 120;
+// How often the interface asks for the state while it runs on the device: the
+// document is a few kilobytes and building it a thousand times a minute is the
+// biggest source of heap peaks on an ESP32. The desktop keeps one second.
+const uint32_t DEVICE_POLL_MS = 2000;
 const uint32_t HISTORY_MAX_POINTS = 600;
 
 String contentTypeOf(const String &path) {
@@ -392,8 +396,13 @@ void WebUi::handleState() {
     device["historyBytes"] = stats_ != nullptr ? stats_->bytes() : 0;
     device["statsReady"] = stats_ != nullptr && stats_->ready();
     device["flashFree"] = static_cast<uint32_t>(LittleFS.totalBytes() - LittleFS.usedBytes());
+    // The interface is served by the device, so it asks less often: every
+    // document is a few kilobytes and this one is built on every request.
+    config["pollMs"] = DEVICE_POLL_MS;
 
     String payload;
+    // One allocation instead of a String that doubles its buffer five times.
+    payload.reserve(6144);
     serializeJson(document, payload);
     server_.send(200, "application/json; charset=utf-8", payload);
 }
@@ -677,6 +686,7 @@ void WebUi::handleCellHistory() {
     root["storedCapacity"] = stats_ != nullptr ? stats_->capacity() : 0;
     root["storedBytes"] = stats_ != nullptr ? stats_->bytes() : 0;
     String payload;
+    payload.reserve(12288);
     serializeJson(document, payload);
     server_.send(200, "application/json; charset=utf-8", payload);
 }

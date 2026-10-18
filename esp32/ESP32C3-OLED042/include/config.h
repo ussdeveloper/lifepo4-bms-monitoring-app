@@ -9,7 +9,7 @@
 // Every firmware change gets a new version and a build number: the interface
 // prints both, so it is always obvious which build is running on the device.
 #define APP_VERSION "esp32-0.2.1"
-#define APP_BUILD 5
+#define APP_BUILD 6
 // The version and build history is in esp32/ESP32C3-OLED042/CHANGELOG.md.
 
 // Preferences namespace in NVS: everything the user can change lives here, next
@@ -48,17 +48,18 @@ static const uint32_t MIN_INTERVAL_MS = 1000;
 static const uint32_t MAX_INTERVAL_MS = 60000;
 static const uint32_t BLE_CONNECT_TIMEOUT_MS = 15000;
 static const uint32_t BLE_RETRY_MS = 5000;
-// The ESP32-C3 has one radio for Wi-Fi and Bluetooth together, so the scanner
-// must not hog it: a short scan with a long pause in between keeps the web
-// interface responsive while the device looks for the battery.
-static const uint32_t BLE_SCAN_SECONDS = 4;
-static const uint32_t BLE_SCAN_PAUSE_MS = 3000;
-// Listening is measured in units of 0.625 ms: the scanner is on for 75 ms of
-// every 100 ms. The radio is shared with Wi-Fi, and a low share here is what
-// makes a battery two metres away invisible: with Wi-Fi up, only the time the
-// scan actually listens is left for hearing it.
-static const uint16_t BLE_SCAN_INTERVAL = 160;   // 100 ms
-static const uint16_t BLE_SCAN_WINDOW = 120;     // 75 ms
+// The ESP32-C3 has one radio for Wi-Fi and Bluetooth together. This board runs
+// from a power supply, so nothing is saved by listening briefly: the scanner
+// listens without gaps for as long as a round lasts, with a short pause between
+// rounds only so the Wi-Fi side can breathe.
+static const uint32_t BLE_SCAN_SECONDS = 8;
+static const uint32_t BLE_SCAN_PAUSE_MS = 1000;
+// Measured in units of 0.625 ms. A window equal to the interval means the
+// receiver never stops listening during a round: a battery at the edge of the
+// range loses packets to noise, and every extra listen is another chance to
+// catch one.
+static const uint16_t BLE_SCAN_INTERVAL = 160;  // 100 ms
+static const uint16_t BLE_SCAN_WINDOW = 160;    // the whole interval
 
 // The interface keeps a window of recent readings in memory for the charts: a
 // device has no disk to write a long history to. The window is a ring, so it
@@ -70,5 +71,6 @@ static const size_t MIN_HISTORY_POINTS = 60;
 // Over the air updates: the device answers both the Arduino IDE/PlatformIO
 // protocol (port 3232) and a plain HTTP upload on /api/ota.
 static const char *const DEFAULT_OTA_PASSWORD = "lifepo4bms";
+
 
 
