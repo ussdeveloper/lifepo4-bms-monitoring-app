@@ -91,8 +91,7 @@ the read API switch, MQTT (broker, topic prefix, Home Assistant discovery) and
 | | Desktop | ESP32-C3 |
 |---|---|---|
 | Interface | served from the binary, port 80/8822 | served from the filesystem image, port 80 |
-| History | SQLite on disk (`history.db`), chart of hours…months | the last ~360 readings in RAM for the live chart, **plus a fixed-size file in flash** (see below), oldest always dropped |
-| Backup | download/import the database | `GET /api/cells/history` (the flash file), `POST /api/stats/clear` to empty it |
+| History | SQLite on disk (`history.db`), chart of hours…months | the last ~360 readings in RAM for the live chart, **plus a fixed-size file in flash** (see below), oldest always dropped || Backup | download/import the database | `GET /api/cells/history` (the flash file), `POST /api/stats/clear` to empty it |
 | Battery list | `devices.json` | up to 8 batteries in flash (NVS) |
 | Console window | optional console with the log | the serial log, and `/api/log` |
 | Radios | every Bluetooth radio of the computer | the one radio the chip has |
@@ -110,20 +109,52 @@ a limit:
 |---|---|---|
 | Wi-Fi network, interval, release time, language, read API, MQTT, OTA password, display pins, access point number | NVS (one key each) | a few hundred bytes |
 | Batteries found so far (address and name) | NVS, JSON under `batteries` | up to 8 entries |
-| Readings for the chart | `/stats.bin` in the filesystem | a ring of 2048 records (58 B each), **116 KB fixed** |
+| Readings for the chart | `/stats.bin` in the filesystem | a ring of 560 records (58 B each), **~32 KB fixed** |
 
 The statistics file never grows: a new reading overwrites the oldest one, and its
-size is chosen when it is created from what is free in the filesystem, leaving
-96 KB spare for the interface files and an update. Readings are written in
-batches once a minute, not on every sample, because each write costs a block of
-flash and the device is meant to run for years. `/api/state` reports
-`historyStored`, `historyStoredCapacity`, `historyBytes` and `flashFree`, and the
-settings panel shows the same numbers.
+size is chosen when it is created from what is free in the filesystem, leaving at
+least 128 KB spare for the interface files, an update and the free blocks LittleFS
+needs to move data around. Readings are written in batches every two minutes, not
+on every sample, and the header only every eighth batch, because each write costs
+a block of flash and the device is meant to run for years. Below 64 KB of free
+flash the readings are dropped and the file reset — a full flash would stop the
+whole application, and losing the chart is the cheaper price.
+
+`/api/state` reports `historyStored`, `historyStoredCapacity`, `historyBytes` and
+`flashFree`, and the settings panel shows the same numbers.
 
 A battery that is seen but not answered is asked directly every twenty seconds;
 the Bluetooth stack is restarted after three failed connection attempts, because
 the Arduino Bluetooth client uses up a registration slot on every attempt and
-would otherwise stop connecting altogether.
+would otherwise stop connecting altogether. Each restart doubles the wait before
+the next attempt (1, 2, 4 … 15 minutes), so a battery that is away for a day does
+not cycle the stack hundreds of times.
+
+## When the device stops answering
+
+The first build could run for a few hours and then go silent — no page, no API,
+nothing on the network. The causes were the flash and the heap:
+
+* the readings file took 116 KB of a 384 KB partition, which left LittleFS too
+  few free blocks; every write became a garbage collection pass until writes
+  stalled. It is now ~32 KB (`MAX_POINTS 560`), and below 64 KB of free flash the
+  readings are dropped and the file reset rather than written into a corner;
+* the log tail kept 60 `String` objects that were reallocated with every line —
+  hours of that fragments the heap until an allocation fails. It is a fixed array
+  of character buffers now;
+* the charts asked for documents of tens of kilobytes every second; they are
+  thinned to 60 (power) and 120 (cells) points.
+
+On top of that, two safety nets make a stuck device recover on its own:
+
+| Situation | What happens |
+|---|---|
+| free heap under 10 KB for 3 minutes | the reason is logged and the device restarts |
+| five boots in a row without staying up for 3 minutes | statistics and Bluetooth are skipped, so the interface and OTA always come up |
+
+If it still does not respond, cycle its power. Only if it stays silent after that
+is the cable needed — and then the note about the second application slot above
+matters.
 
 ## MQTT in Home Assistant
 

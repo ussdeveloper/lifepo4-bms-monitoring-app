@@ -350,12 +350,25 @@ void Bms::tryKnownBatteries() {
 
 void Bms::restartBluetooth() {
     // The Arduino Bluetooth client registers a GATT application on every
-    // connection attempt and only gives the slot back when the attempt works.
-    // The stack has a handful of slots, so after a few failures every later
+    // connection attempt, and a battery that is not there uses those slots up.
+    // The stack has a handful of them, so after a few failures every later
     // attempt is refused ("Deregister Failed unknown client cif") — a battery
     // that is plainly visible but can never be reached. Restarting the stack
     // hands all the slots back.
-    logLine("bms", "restarting Bluetooth after failed connections");
+    //
+    // Restarting it costs memory and time, so it is done less and less often
+    // while the battery stays away: a device that cycles its Bluetooth stack
+    // every couple of minutes for hours is a device that runs out of memory.
+    if (stackRestarts_ < 6) {
+        stackRestarts_++;
+    }
+    uint32_t backoff = 60000UL << (stackRestarts_ > 4 ? 4 : (stackRestarts_ - 1));
+    if (backoff > 15UL * 60UL * 1000UL) {
+        backoff = 15UL * 60UL * 1000UL;
+    }
+    knownRetryAt_ = millis() + backoff;
+    logLine("bms", "restarting Bluetooth after failed connections, next attempt in " +
+                       String(backoff / 60000) + " min");
     if (client != nullptr) {
         client->disconnect();
         delete client;
@@ -430,6 +443,9 @@ void Bms::tryConnect(const String &target, uint32_t addressType) {
     connected_ = true;
     takeover_ = false;
     error_ = "";
+    // A battery that answers proves the stack is healthy again: the next
+    // failure starts the backoff from the beginning.
+    stackRestarts_ = 0;
     protocol_ = "HS03/HiLink";
     modelRead_ = false;
     analogLength_ = 0;

@@ -37,16 +37,25 @@ struct StatsRecord {
 
 const size_t RECORD_SIZE = sizeof(StatsRecord);
 
-// Flash given to the readings: whatever is free, minus what the interface files
-// and a firmware update need. The window is a ring, so this is a ceiling, not a
-// guess that can be exceeded.
-const size_t FLASH_RESERVE_BYTES = 96 * 1024;
+// Flash kept for everything else: the interface files are ~150 KB, an update
+// needs room to work, and LittleFS needs free blocks so it can move data while
+// writing. A file that takes most of the partition is what makes a device die
+// after a few hours: every write turns into a garbage collection pass.
+const size_t FLASH_RESERVE_BYTES = 128 * 1024;
 const uint16_t MIN_POINTS = 128;
-const uint16_t MAX_POINTS = 2048;
-
-// One flash write a minute: every write costs a block of flash, and the file is
-// only there to survive a restart, not to protect against a lost second.
-const uint32_t FLUSH_INTERVAL_MS = 60000;
+// 560 records of 58 bytes is about 32 KB — roughly an hour of readings at the
+// default interval, at a size flash can keep up with for years.
+const uint16_t MAX_POINTS = 560;
+// Writing a batch every two minutes: each write costs flash, and the file is
+// there to survive a restart, not to protect against a lost second.
+const uint32_t FLUSH_INTERVAL_MS = 120000;
+// The header only has to be roughly right: it is written every eighth batch, so
+// block zero is not rewritten every couple of minutes for the rest of the
+// device's life. A restart loses at most those few readings.
+const uint8_t HEADER_EVERY_BATCHES = 8;
+// Below this much free flash the readings are dropped and the file emptied, so
+// the interface and the update path always have somewhere to write.
+const size_t MIN_FREE_FLASH = 64 * 1024;
 
 StatsHeader readHeader(File &file) {
     StatsHeader header = {};
@@ -79,16 +88,21 @@ void fillPoint(HistoryPoint &point, const StatsRecord &record) {
 }
 }  // namespace
 
+size_t Stats::freeFlash() {
+    const size_t total = LittleFS.totalBytes();
+    const size_t used = LittleFS.usedBytes();
+    return total > used ? total - used : 0;
+}
+
 void Stats::begin() {
     if (file_) {
         file_.close();
     }
+    ready_ = false;
 
-    // How many readings fit: what is free, less the reserve for the interface.
-    size_t freeBytes = 0;
-    if (LittleFS.totalBytes() > LittleFS.usedBytes()) {
-        freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
-    }
+    // How many readings fit: what is free, less the reserve for the interface,
+    // an update and the free blocks LittleFS needs to work with.
+    size_t freeBytes = freeFlash();
     File existing = LittleFS.open(STATS_PATH, "r");
     size_t existingBytes = existing ? existing.size() : 0;
     if (existing) {
@@ -199,9 +213,11 @@ void Stats::begin() {
     file_.seek(0, SeekSet);
     ready_ = true;
     pendingCount_ = 0;
+    batchesSinceHeader_ = 0;
     lastFlushAt_ = millis();
     logLine("stats", String(count_) + " readings in flash of " + String(capacity_) +
-                        " (" + String(bytes_ / 1024) + " KB)");
+                        " (" + String(bytes_ / 1024) + " KB, " + String(freeFlash() / 1024) +
+                        " KB free)");
 }
 
 void Stats::record(const HistoryPoint &point) {
@@ -217,7 +233,7 @@ void Stats::record(const HistoryPoint &point) {
 }
 
 void Stats::loop() {
-    if (pendingCount_ == 0) {
+    if (!ready_ || pendingCount_ == 0) {
         return;
     }
     if (millis() - lastFlushAt_ >= FLUSH_INTERVAL_MS) {
@@ -229,13 +245,23 @@ void Stats::flush() {
     if (!ready_ || pendingCount_ == 0 || !file_) {
         return;
     }
+    // Never write the device into a corner: with too little free flash the
+    // filesystem has no room to move data, and every later write would stall.
+    if (freeFlash() < MIN_FREE_FLASH) {
+        logLine("stats", "only " + String(freeFlash() / 1024) +
+                            " KB of flash left, dropping the stored readings");
+        recover();
+        return;
+    }
     for (size_t index = 0; index < pendingCount_; index++) {
         StatsRecord record = {};
         fillRecord(record, pending_[index]);
         file_.seek(sizeof(StatsHeader) + static_cast<size_t>(head_) * RECORD_SIZE, SeekSet);
         if (file_.write(reinterpret_cast<const uint8_t *>(&record), RECORD_SIZE) != RECORD_SIZE) {
-            logLine("stats", "a reading could not be written to flash");
+            logLine("stats", "a reading could not be written to flash (" +
+                                String(freeFlash() / 1024) + " KB free)");
             pendingCount_ = 0;
+            recover();
             return;
         }
         head_ = static_cast<uint16_t>((head_ + 1) % capacity_);
@@ -245,12 +271,32 @@ void Stats::flush() {
         written_++;
     }
     pendingCount_ = 0;
-    writeHeader();
     // LittleFS keeps small writes in a block cache and only commits them when
     // the file is closed or synced. Without this the readings sit in the cache
     // and a restart throws them away, leaving an empty file behind.
     file_.flush();
+    if (++batchesSinceHeader_ >= HEADER_EVERY_BATCHES) {
+        batchesSinceHeader_ = 0;
+        writeHeader();
+        file_.flush();
+    }
     lastFlushAt_ = millis();
+}
+
+void Stats::recover() {
+    if (file_) {
+        file_.close();
+    }
+    ready_ = false;
+    pendingCount_ = 0;
+    head_ = 0;
+    count_ = 0;
+    written_ = 0;
+    batchesSinceHeader_ = 0;
+    LittleFS.remove(STATS_PATH);
+    LittleFS.remove("/stats.tmp");
+    logLine("stats", "the statistics file was reset");
+    begin();
 }
 
 void Stats::writeHeader() {
@@ -288,6 +334,7 @@ void Stats::clear() {
     head_ = 0;
     count_ = 0;
     written_ = 0;
+    batchesSinceHeader_ = 0;
     writeHeader();
     if (file_) {
         file_.flush();

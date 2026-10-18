@@ -8,6 +8,11 @@
 
 namespace {
 const uint32_t POWER_WINDOW_S = 600;  // the power graph shows ten minutes
+// The two charts are a few hundred pixels wide. Sending every stored reading
+// would build documents of tens of kilobytes on a device with 50 KB of heap, so
+// the points handed to the interface are spread evenly over the window.
+const size_t POWER_CHART_POINTS = 60;
+const size_t HISTORY_CHART_POINTS = 120;
 const uint32_t HISTORY_MAX_POINTS = 600;
 
 String contentTypeOf(const String &path) {
@@ -295,14 +300,27 @@ void WebUi::handleState() {
     }
 
     // The power graph: the last ten minutes of readings, read straight out of
-    // the ring (copying it would not fit on the stack of this task).
+    // the ring (copying it would not fit on the stack of this task) and thinned
+    // to what the graph can actually show.
     JsonArray power = session["power"].to<JsonArray>();
     if (history_ != nullptr) {
         const uint32_t now = static_cast<uint32_t>(time(nullptr));
         const uint32_t from = now > POWER_WINDOW_S ? now - POWER_WINDOW_S : 0;
+        size_t visible = 0;
+        for (size_t index = 0; index < history_->count(); index++) {
+            if (history_->at(index).time >= from) {
+                visible++;
+            }
+        }
+        const size_t step =
+            visible > POWER_CHART_POINTS ? (visible + POWER_CHART_POINTS - 1) / POWER_CHART_POINTS : 1;
+        size_t seen = 0;
         for (size_t index = 0; index < history_->count(); index++) {
             const HistoryPoint &point = history_->at(index);
             if (point.time < from) {
+                continue;
+            }
+            if (step > 1 && seen++ % step != 0) {
                 continue;
             }
             JsonObject entry = power.add<JsonObject>();
@@ -372,6 +390,7 @@ void WebUi::handleState() {
     device["historyStored"] = stats_ != nullptr ? stats_->count() : 0;
     device["historyStoredCapacity"] = stats_ != nullptr ? stats_->capacity() : 0;
     device["historyBytes"] = stats_ != nullptr ? stats_->bytes() : 0;
+    device["statsReady"] = stats_ != nullptr && stats_->ready();
     device["flashFree"] = static_cast<uint32_t>(LittleFS.totalBytes() - LittleFS.usedBytes());
 
     String payload;
@@ -597,6 +616,11 @@ void WebUi::handleCellHistory() {
     root["minutes"] = minutes;
     JsonArray points = root["points"].to<JsonArray>();
     const uint32_t from = now > minutes * 60 ? now - minutes * 60 : 0;
+    // The chart is a few hundred pixels wide: sending every stored reading
+    // would build a document of tens of kilobytes for no visible gain, so the
+    // points are spread evenly over the window.
+    const size_t limit = storedCount > HISTORY_CHART_POINTS ? HISTORY_CHART_POINTS : 0;
+    const size_t step = limit > 0 ? (storedCount + limit - 1) / limit : 1;
     uint32_t newestStored = 0;
     // Everything that was written to flash comes first (it is what survives a
     // restart), then the readings still only in memory, which are newer.
@@ -606,7 +630,7 @@ void WebUi::handleCellHistory() {
             break;
         }
         newestStored = stored.time;
-        if (stored.time < from) {
+        if (stored.time < from || (step > 1 && index % step != 0)) {
             continue;
         }
         JsonObject point = points.add<JsonObject>();
@@ -617,10 +641,25 @@ void WebUi::handleCellHistory() {
             cells.add(stored.cellsMv[cell]);
         }
     }
-    if (history_ != nullptr) {
+    if (history_ != nullptr && points.size() < HISTORY_CHART_POINTS) {
+        // The readings still only in memory are newer, so they are thinned the
+        // same way and added after the stored ones.
+        const size_t remaining = HISTORY_CHART_POINTS - points.size();
+        size_t fresh = 0;
         for (size_t index = 0; index < history_->count(); index++) {
             const HistoryPoint &stored = history_->at(index);
+            if (stored.time >= from && stored.time > newestStored) {
+                fresh++;
+            }
+        }
+        const size_t freshStep = (fresh > remaining && remaining > 0) ? (fresh + remaining - 1) / remaining : 1;
+        size_t seen = 0;
+        for (size_t index = 0; index < history_->count() && points.size() < HISTORY_CHART_POINTS; index++) {
+            const HistoryPoint &stored = history_->at(index);
             if (stored.time < from || stored.time <= newestStored) {
+                continue;
+            }
+            if (freshStep > 1 && seen++ % freshStep != 0) {
                 continue;
             }
             JsonObject point = points.add<JsonObject>();

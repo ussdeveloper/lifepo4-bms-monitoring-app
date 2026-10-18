@@ -2,9 +2,9 @@
 //
 // The file is a ring of a fixed number of records: writing a new one overwrites
 // the oldest, so it can never grow past its size and never fills the partition.
-// Records are written in batches (one flash write every minute), because every
-// small write costs a whole block of flash and the device is meant to run for
-// years.
+// It is deliberately small: LittleFS needs free blocks to move data around, and
+// a file that eats most of the partition makes every write slower until the
+// device stops answering. It is written in batches, not on every reading.
 #pragma once
 
 #include <Arduino.h>
@@ -31,13 +31,21 @@ public:
     // fell out of the ring.
     uint32_t written() const { return written_; }
     size_t pending() const { return pendingCount_; }
+    // ready is false when the file could not be opened or would not accept a
+    // write any more; the rest of the device keeps working without it.
+    bool ready() const { return ready_; }
+    // freeFlash is what LittleFS has left, in bytes.
+    static size_t freeFlash();
     // at reads one stored reading, 0 being the oldest.
     bool at(size_t index, HistoryPoint &out);
     void clear();
 
 private:
     void writeHeader();
-    bool prepare(uint16_t &capacityOut);
+    // recover throws the file away and starts a new one: used when a write
+    // fails, because a filesystem that refuses writes would otherwise wedge the
+    // whole device on the next attempt.
+    void recover();
 
     File file_;
     bool ready_ = false;
@@ -50,4 +58,5 @@ private:
 
     HistoryPoint pending_[8];
     size_t pendingCount_ = 0;
+    uint8_t batchesSinceHeader_ = 0;
 };

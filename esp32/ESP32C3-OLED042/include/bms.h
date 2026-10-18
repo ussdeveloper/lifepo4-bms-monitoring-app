@@ -101,6 +101,9 @@ private:
     volatile bool paused_ = false;
     bool bleStarted_ = false;
     uint8_t connectFailures_ = 0;
+    // How many times the Bluetooth stack was restarted in a row; the wait
+    // between attempts grows with it.
+    uint8_t stackRestarts_ = 0;
     String address_;
     String name_;
     String model_;

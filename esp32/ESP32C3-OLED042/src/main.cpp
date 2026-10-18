@@ -25,6 +25,14 @@
 #include "webui.h"
 
 namespace {
+// A counter that survives a software reset: a firmware that crashes while
+// starting would otherwise restart forever and never be reachable over the air.
+// After a few bad boots the pieces most likely to be at fault are skipped.
+RTC_NOINIT_ATTR uint32_t bootGuardMagic;
+RTC_NOINIT_ATTR uint32_t bootCount;
+const uint32_t BOOT_GUARD_MAGIC = 0x424F4F54;  // "BOOT"
+const uint32_t BOOT_GUARD_LIMIT = 5;
+
 AppConfig config;
 Network network;
 Bms bms;
@@ -40,6 +48,14 @@ uint32_t lastReadingAt = 0;
 uint32_t lastDisplayAt = 0;
 uint32_t lastPublishAt = 0;
 const uint32_t DISPLAY_INTERVAL_MS = 250;
+// A heap this small cannot survive the next allocation: the device answers for
+// a while and then stops somewhere it cannot recover from, so it restarts while
+// it still can.
+const uint32_t CRITICAL_HEAP_BYTES = 10 * 1024;
+const uint32_t CRITICAL_HEAP_MS = 3UL * 60UL * 1000UL;
+// How long the device has to keep running before the bad-boot counter is
+// cleared.
+const uint32_t HEALTHY_UPTIME_MS = 3UL * 60UL * 1000UL;
 
 // The display redraws from the current state: the project keeps no other copy
 // of it, so the screens can never show something that was true a minute ago.
@@ -121,11 +137,12 @@ void setupClock() {
         logLine("time", "the clock is set");
     }
 }
-// The chart window of the device lives in RAM, so it is watched: when free
-// memory falls below the watermark the oldest readings are dropped and the
-// window shrinks, which keeps Wi-Fi, Bluetooth and the web server working.
+// guardMemory keeps the chart window in check and, if the heap stays critically
+// low, restarts the device: a restart that is logged is much better than a
+// device that stops answering and needs the cable.
 void guardMemory() {
     static uint32_t lastCheck = 0;
+    static uint32_t lowSince = 0;
     if (millis() - lastCheck < 5000) {
         return;
     }
@@ -135,13 +152,27 @@ void guardMemory() {
                            " KB), chart window is now " + String(history.capacity()) +
                            " readings, oldest dropped");
     }
-    if (ESP.getFreeHeap() < LOW_HEAP_BYTES) {
+    const uint32_t free = ESP.getFreeHeap();
+    if (free < CRITICAL_HEAP_BYTES) {
+        if (lowSince == 0) {
+            lowSince = millis();
+            logLine("mem", "free memory fell to " + String(free / 1024) + " KB, watching");
+        } else if (millis() - lowSince > CRITICAL_HEAP_MS) {
+            logLine("mem", "free memory stayed under " + String(CRITICAL_HEAP_BYTES / 1024) +
+                               " KB for " + String(CRITICAL_HEAP_MS / 60000) +
+                               " minutes, restarting");
+            delay(300);
+            ESP.restart();
+        }
+    } else {
+        lowSince = 0;
+    }
+    if (free < LOW_HEAP_BYTES) {
         static uint32_t lastWarn = 0;
         if (millis() - lastWarn > 60000) {
             lastWarn = millis();
-            logLine("mem", "free memory is " + String(ESP.getFreeHeap() / 1024) +
-                               " KB (minimum seen " + String(ESP.getMinFreeHeap() / 1024) +
-                               " KB)");
+            logLine("mem", "free memory is " + String(free / 1024) + " KB (minimum seen " +
+                               String(ESP.getMinFreeHeap() / 1024) + " KB)");
         }
     }
 }
@@ -170,9 +201,25 @@ void setup() {
     Serial.println(APP_TITLE);
     Serial.println(APP_VERSION);
 
+    // How many times the device has started without managing to stay up for a
+    // few minutes. A firmware that crashes while starting would restart forever
+    // and could only be fixed with the cable; after a few bad boots the flash
+    // statistics are skipped so the rest can come up and be updated over the
+    // air.
+    if (bootGuardMagic != BOOT_GUARD_MAGIC) {
+        bootGuardMagic = BOOT_GUARD_MAGIC;
+        bootCount = 0;
+    }
+    bootCount++;
+    const bool unsafeBoot = bootCount > BOOT_GUARD_LIMIT;
+
     config.begin();
     logSetVerbose(config.debugLog);
-    logLine("boot", "starting " + String(APP_VERSION));
+    logLine("boot", "starting " + String(APP_VERSION) + " build " + String(APP_BUILD));
+    if (unsafeBoot) {
+        logLine("boot", "starting for the " + String(bootCount) +
+                            " time without staying up: statistics and Bluetooth are skipped");
+    }
 
     // The display first: if the Wi-Fi takes a while, the reason is already
     // visible on the device.
@@ -182,18 +229,25 @@ void setup() {
     if (!LittleFS.begin(true)) {
         logLine("boot", "the interface files are missing, run pio run -t uploadfs");
     } else {
-        logLine("boot", String(LittleFS.totalBytes() / 1024) + " KB filesystem");
+        logLine("boot", String(LittleFS.totalBytes() / 1024) + " KB filesystem, " +
+                            String(Stats::freeFlash() / 1024) + " KB free");
     }
     // The readings that outlive a restart: the file is a ring of a fixed size,
     // so it can never take the space the interface needs.
-    stats.begin();
+    if (!unsafeBoot) {
+        stats.begin();
+    }
 
     // Bluetooth before Wi-Fi: the ESP32-C3 has one radio for both, and the
     // coexistence module has to be told about Bluetooth before the station
     // starts connecting — enabling Bluetooth afterwards aborts the device.
-    bms.begin(&config);
-    bms.onSample = onSample;
-    bms.onState = onStateChange;
+    // Skipped after repeated bad boots: a device without Bluetooth still serves
+    // the interface and can be updated, which is what matters then.
+    if (!unsafeBoot) {
+        bms.begin(&config);
+        bms.onSample = onSample;
+        bms.onState = onStateChange;
+    }
     logLine("boot", String(ESP.getFreeHeap() / 1024) + " KB free after Bluetooth");
 
     network.begin(&config);
@@ -238,6 +292,12 @@ void loop() {
 
     guardMemory();
     heartbeat();
+
+    // The device stayed up long enough to be trusted again: a later restart
+    // starts counting from zero instead of skipping half the firmware.
+    if (bootCount > 0 && millis() > HEALTHY_UPTIME_MS) {
+        bootCount = 0;
+    }
 
     // MQTT is published per reading; if the broker was away, send the last
     // reading again once it comes back.
