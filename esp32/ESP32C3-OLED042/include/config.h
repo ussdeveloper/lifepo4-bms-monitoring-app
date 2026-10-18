@@ -9,7 +9,7 @@
 // Every firmware change gets a new version and a build number: the interface
 // prints both, so it is always obvious which build is running on the device.
 #define APP_VERSION "esp32-0.2.1"
-#define APP_BUILD 6
+#define APP_BUILD 9
 // The version and build history is in esp32/ESP32C3-OLED042/CHANGELOG.md.
 
 // Preferences namespace in NVS: everything the user can change lives here, next
@@ -71,6 +71,9 @@ static const size_t MIN_HISTORY_POINTS = 60;
 // Over the air updates: the device answers both the Arduino IDE/PlatformIO
 // protocol (port 3232) and a plain HTTP upload on /api/ota.
 static const char *const DEFAULT_OTA_PASSWORD = "lifepo4bms";
+
+
+
 
 
 

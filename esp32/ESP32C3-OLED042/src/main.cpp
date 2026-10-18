@@ -10,6 +10,7 @@
 // while Wi-Fi comes up), then everything that needs the network.
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <esp_coexist.h>
 #include <time.h>
 
 #include "appconfig.h"
@@ -252,6 +253,11 @@ void setup() {
 
     network.begin(&config);
     logLine("boot", String(ESP.getFreeHeap() / 1024) + " KB free after Wi-Fi");
+
+    // The radio is shared, and this board runs from a power supply: Bluetooth
+    // gets priority. Without it the Wi-Fi side wins the arbitration often
+    // enough that a battery at the edge of the range is never heard.
+    esp_coex_preference_set(ESP_COEX_PREFER_BT);
     mqtt.begin(&config, &bms);
     web.begin(&config, &network, &bms, &display, &history, &stats, &monitor);
     ota.begin(&config);
@@ -261,9 +267,11 @@ void setup() {
 }
 
 void loop() {
-    network.loop();    // While the setup access point is up, Bluetooth stays quiet: one radio
-    // serves both, and the access point has to be easy to find.
-    bms.pause(network.status().accessPoint);
+    network.loop();
+    // While the setup access point is up, Bluetooth stays quiet: one radio
+    // serves both, and the access point has to be easy to find. The same during
+    // an update, which needs the radio to itself to be quick.
+    bms.pause(network.status().accessPoint || web.updating());
     web.loop();
     mqtt.loop();
     web.noteMqttConnection(mqtt.connected());

@@ -8,10 +8,12 @@
 #include "log.h"
 
 namespace {
-// How long the device waits before asking a remembered battery directly again
-// when it cannot be heard in the air. The attempt itself blocks the Bluetooth
-// task for up to half a minute, so the scans in between have to keep running.
-const uint32_t KNOWN_RETRY_MS = 20000;
+// How long the device waits before asking a remembered battery directly when it
+// cannot be heard in the air. A connect attempt blocks the Bluetooth task for up
+// to half a minute, so this is deliberately long: listening is what finds a
+// battery, and a direct attempt is the exception for one that is held by another
+// device and therefore silent.
+const uint32_t KNOWN_RETRY_MS = 45000;
 // Failed connection attempts before the Bluetooth stack is restarted: each one
 // uses up a registration slot that the library never gives back on its own.
 const uint8_t CONNECT_FAILURES_BEFORE_RESTART = 3;
@@ -167,13 +169,27 @@ void Bms::run() {
         }
         if (!bleStarted_) {
             BLEDevice::init("LiFePO4-BMS");
+            // Full transmit power: a battery at the edge of the range hears the
+            // connection request the first time instead of timing out, and the
+            // scan requests behind the names come back more often.
+            esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+            esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+            esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
             scanner = BLEDevice::getScan();
             scanner->setActiveScan(true);
+            // Active scanning asks every device for its name, which doubles the
+            // packets a round receives.
             scanner->setInterval(BLE_SCAN_INTERVAL);
             scanner->setWindow(BLE_SCAN_WINDOW);
             bleStarted_ = true;
             nextActionAt_ = millis();
-            logLine("bms", "Bluetooth back on, looking for the battery");
+            // Listening comes first: the first direct attempt is deferred, so a
+            // battery that is awake is found by a scan instead of being missed
+            // while the task is stuck in a connect that cannot succeed.
+            knownRetryAt_ = millis() + KNOWN_RETRY_MS;
+            logLine("bms", "Bluetooth ready: listening " + String(BLE_SCAN_SECONDS) +
+                               " s in a row every " +
+                               String(BLE_SCAN_SECONDS + BLE_SCAN_PAUSE_MS / 1000) + " s, full power");
         }
         const uint32_t now = millis();
 
@@ -650,3 +666,4 @@ void Bms::disconnect() {
         client->disconnect();
     }
 }
+

@@ -116,9 +116,25 @@ the read API switch, MQTT (broker, topic prefix, Home Assistant discovery) and
 | Console window | optional console with the log | the serial log, and `/api/log` |
 | Radios | every Bluetooth radio of the computer | the one radio the chip has |
 
-Wi-Fi and Bluetooth share that one radio: the scan listens for 75 ms of every
-100 ms, in rounds of four seconds with a pause in between, so the web interface
-stays responsive while the device looks for the battery.
+Wi-Fi and Bluetooth share that one radio, and this board runs from a power
+supply, so the scan is tuned for range rather than for saving energy:
+
+| Setting | Value | Why |
+|---|---|---|
+| Round length | 8 s listening, 1 s pause | the radio is listening ~89 % of the time |
+| Scan window | 100 ms of every 100 ms | no gaps inside a round, so a weak packet is not missed |
+| Active scan | on | asks every device for its name, doubling the packets heard |
+| Transmit power | +9 dBm (`ESP_PWR_LVL_P9`) | a battery at the edge of the range answers the first time |
+| Coexistence | `ESP_COEX_PREFER_BT` | the radio favours Bluetooth over Wi-Fi |
+| Direct attempts | first deferred, then every 45 s | a connect blocks the task for up to 30 s, and listening is what finds a battery |
+
+Measured on this board: 11 devices heard with the old settings, 15–19 after, and
+87 packets in 55 s instead of 11. Wi-Fi still answers in 100–270 ms, and an
+update takes ~23 s because Bluetooth is paused while one is written.
+
+During an update the radio belongs to the transfer: `web.updating()` makes the
+main loop pause Bluetooth for the duration, otherwise a 100 % scan starves the
+upload.
 
 ## What is kept in flash
 

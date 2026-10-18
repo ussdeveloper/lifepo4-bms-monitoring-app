@@ -23,6 +23,10 @@ public:
                Stats *stats, Monitor *monitor);
     void loop();
     void noteMqttConnection(bool connected) { mqttConnected_ = connected; }
+    // updating is true while an upload is being written: the radio belongs to
+    // the update then, otherwise a 100 % Bluetooth scan keeps stealing it and
+    // the transfer crawls.
+    bool updating() const { return filesystemUpload_ || firmwareUpload_; }
 
 private:
     void handleState();
@@ -59,4 +63,5 @@ private:
     WebServer server_{80};
     bool mqttConnected_ = false;
     bool filesystemUpload_ = false;
+    bool firmwareUpload_ = false;
 };

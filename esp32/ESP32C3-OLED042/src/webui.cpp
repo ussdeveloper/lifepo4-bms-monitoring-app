@@ -77,6 +77,7 @@ void WebUi::begin(AppConfig *config, Network *network, Bms *bms, Display *displa
                    const bool filesystem = server_.hasArg("fs") && server_.arg("fs") == "1";
                    if (upload.status == UPLOAD_FILE_START) {
                        filesystemUpload_ = filesystem;
+                       firmwareUpload_ = !filesystem;
                        logLine("ota", String("receiving ") + (filesystem ? "the interface" : "firmware") +
                                           " " + upload.filename);
                        if (filesystem) {
@@ -98,6 +99,8 @@ void WebUi::begin(AppConfig *config, Network *network, Bms *bms, Display *displa
                                               " written, restarting");
                        } else {
                            Update.printError(Serial);
+                           filesystemUpload_ = false;
+                           firmwareUpload_ = false;
                        }
                    }
                });
