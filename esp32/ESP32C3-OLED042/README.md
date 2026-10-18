@@ -68,6 +68,39 @@ brick it.
 >   .pio/build/esp32c3/firmware.bin     # the second slot, 0x10000 is the first
 > ```
 
+### Measuring the Bluetooth link
+
+`src/rftest.cpp` is a separate firmware (`pio run -e rftest -t upload`) that
+scans with **no Wi-Fi running** and prints every device with its signal level.
+It answers one question: is the radio weak, or is the battery simply too far?
+
+Measured on this board with the battery a few metres away:
+
+| | PC adapter | ESP32-C3 (Wi-Fi off) |
+|---|---|---|
+| Battery `4E:DF:C5:14:DD:67` | heard at **-86 dBm** | **never heard** |
+| Weakest device heard | -96 dBm | **-101 dBm** |
+| Can connect and read | no | no |
+
+The receiver on the board is the better of the two — it hears further than the
+PC does — yet it never hears the battery. That can only mean the battery is
+much further from the board than from the PC, or something is in the way: the
+signal at the board is below -101 dBm.
+
+So when a battery is out of reach:
+
+* put the board within a metre or two of the BMS, in line of sight, and keep the
+  antenna end of the PCB away from metal, mains cables and the power supply;
+* a battery in a metal enclosure is the other half of the problem — the PC
+  himself could not hold a connection at -86 dBm;
+* if it has to be further away, the board needs an external antenna (a C3
+  module with a U.FL connector); no software setting adds 15 dB.
+
+What the firmware already does at this end: 8 s of uninterrupted listening every
+9 s, transmit power at +9 dBm, Bluetooth preferred over Wi-Fi on the shared
+radio, and direct connection attempts to a remembered address every 45 s. That
+is the ceiling — the measurements above show the receiver working at its limit.
+
 ### Recovering a device that does not answer at all
 
 If the page, the API and the access point are all gone, the firmware is not
