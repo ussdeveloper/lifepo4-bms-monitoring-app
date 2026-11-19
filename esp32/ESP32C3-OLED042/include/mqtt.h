@@ -31,13 +31,18 @@ private:
     AppConfig *config_ = nullptr;
     Bms *bms_ = nullptr;
     bool enabled_ = false;
-    String activeSignature_;
+    // Rebuilt every couple of seconds into these buffers. Building them as
+    // String objects on every pass of the main loop (hundreds of times a
+    // second) is what fragmented the heap until the device stopped answering.
+    char activeSignature_[160] = {0};
+    char discoverySignature_[640] = {0};
+    uint32_t lastSettingsCheck_ = 0;
+    uint32_t lastDiscoveryCheck_ = 0;
+    uint32_t lastAvailabilityCheck_ = 0;
     // The last problem code published as news, so an unchanged fault is not
     // repeated on every reading.
     uint32_t lastProblemCode_ = 0;
     bool problemPublished_ = false;
-    // The list of batteries the last discovery batch was built from.
-    String discoverySignature_;
     // The battery whose availability was published last, so a change (the BMS
     // answering or falling silent) is published once and not every second.
     String availabilityAddress_;

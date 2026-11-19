@@ -76,7 +76,8 @@ public:
     // touchBattery notes that a battery answered just now (memory only).
     void touchBattery(const String &address);
     // isKnownAddress tells whether this address is on the list already.
-    bool isKnownAddress(const String &address) const;
+    bool isKnownAddress(const char *address) const;
+    bool isKnownAddress(const String &address) const { return isKnownAddress(address.c_str()); }
     // setBatteryCells remembers how many cells the battery reported, so Home
     // Assistant gets one sensor per cell even while it is asleep.
     bool setBatteryCells(const String &address, int cells);

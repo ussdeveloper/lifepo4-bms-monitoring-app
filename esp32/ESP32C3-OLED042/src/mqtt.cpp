@@ -4,6 +4,8 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "config.h"
 #include "log.h"
@@ -166,14 +168,23 @@ void Mqtt::loop() {
     if (config_ == nullptr) {
         return;
     }
-    const String signature = config_->mqtt.host + ":" + String(config_->mqtt.port) +
-                             config_->mqtt.prefix + (config_->mqtt.enabled ? "1" : "0");
-    if (signature != activeSignature_) {
-        // The settings changed: drop the old connection and build a new one.
-        disconnect();
-        activeSignature_ = signature;
-        discoverySignature_ = "";
-        nextAttemptAt_ = 0;
+    const uint32_t now = millis();
+    // The settings barely change. Checking them on every pass of the main loop
+    // built and freed a String hundreds of times a second.
+    if (activeSignature_[0] == '\0' || now - lastSettingsCheck_ >= 2000) {
+        lastSettingsCheck_ = now;
+        char signature[sizeof(activeSignature_)];
+        snprintf(signature, sizeof(signature), "%s:%u:%s:%d", config_->mqtt.host.c_str(),
+                 static_cast<unsigned>(config_->mqtt.port), config_->mqtt.prefix.c_str(),
+                 config_->mqtt.enabled ? 1 : 0);
+        if (strcmp(signature, activeSignature_) != 0) {
+            // The settings changed: drop the old connection and build a new one.
+            disconnect();
+            strncpy(activeSignature_, signature, sizeof(activeSignature_) - 1);
+            activeSignature_[sizeof(activeSignature_) - 1] = '\0';
+            discoverySignature_[0] = '\0';
+            nextAttemptAt_ = 0;
+        }
     }
     if (!config_->mqtt.enabled) {
         return;
@@ -183,36 +194,45 @@ void Mqtt::loop() {
         // Discovery is published as soon as the broker answers and again
         // whenever the list of known batteries changes, so a battery stays in
         // Home Assistant even while it cannot be reached.
-        if (config_->mqtt.discovery) {
-            String signature;
-            for (size_t index = 0; index < config_->knownCount(); index++) {
-                signature += config_->known(index).address;
-                signature += '|';
-                signature += config_->known(index).name;
-                signature += '|';
-                signature += String(config_->known(index).cells);
-                signature += ';';
+        if (config_->mqtt.discovery && now - lastDiscoveryCheck_ >= 5000) {
+            lastDiscoveryCheck_ = now;
+            char signature[sizeof(discoverySignature_)];
+            size_t used = 0;
+            signature[0] = '\0';
+            for (size_t index = 0; index < config_->knownCount() && used + 1 < sizeof(signature); index++) {
+                const int wrote = snprintf(
+                    signature + used, sizeof(signature) - used, "%s|%s|%u;",
+                    config_->known(index).address.c_str(), config_->known(index).name.c_str(),
+                    static_cast<unsigned>(config_->known(index).cells));
+                if (wrote < 0 || static_cast<size_t>(wrote) >= sizeof(signature) - used) {
+                    signature[sizeof(signature) - 1] = '\0';
+                    break;
+                }
+                used += static_cast<size_t>(wrote);
             }
-            if (signature != discoverySignature_) {
-                discoverySignature_ = signature;
+            if (strcmp(signature, discoverySignature_) != 0) {
+                strncpy(discoverySignature_, signature, sizeof(discoverySignature_) - 1);
+                discoverySignature_[sizeof(discoverySignature_) - 1] = '\0';
                 publishDiscovery();
             }
         }
         // The battery reports itself online only while the BMS answers, so Home
         // Assistant shows a sleeping battery as unavailable instead of stale.
-        // Addresses are compared by topic slug: the scan reports them in lower
-        // case while the settings keep what the user typed.
-        const String address = bms_ != nullptr ? bms_->address() : String();
-        const bool online = bms_ != nullptr && bms_->connected();
-        if (slug(address) != slug(availabilityAddress_) || online != availabilityOnline_) {
-            if (availabilityAddress_.length() > 0 && slug(availabilityAddress_) != slug(address)) {
-                publishBatteryAvailability(availabilityAddress_, false);
+        // Once a second is enough: the main loop runs hundreds of times faster.
+        if (now - lastAvailabilityCheck_ >= 1000) {
+            lastAvailabilityCheck_ = now;
+            const char *address = bms_ != nullptr ? bms_->address().c_str() : "";
+            const bool online = bms_ != nullptr && bms_->connected();
+            if (!availabilityAddress_.equalsIgnoreCase(address) || online != availabilityOnline_) {
+                if (availabilityAddress_.length() > 0 && !availabilityAddress_.equalsIgnoreCase(address)) {
+                    publishBatteryAvailability(availabilityAddress_, false);
+                }
+                availabilityAddress_ = address;
+                availabilityOnline_ = online;
+                publishBatteryAvailability(address, online);
+                logLine("mqtt", String("battery ") + (address[0] != '\0' ? address : "(none)") + " " +
+                                    (online ? "online" : "offline"));
             }
-            availabilityAddress_ = address;
-            availabilityOnline_ = online;
-            publishBatteryAvailability(address, online);
-            logLine("mqtt", "battery " + (address.length() > 0 ? address : String("(none)")) + " " +
-                                (online ? "online" : "offline"));
         }
         return;
     }

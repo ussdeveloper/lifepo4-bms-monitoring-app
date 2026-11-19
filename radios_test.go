@@ -3,8 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"tinygo.org/x/bluetooth"
 )
@@ -106,5 +108,38 @@ func TestAdoptRadioDevicesKeepsTheBetterName(t *testing.T) {
 	hub.mu.Unlock()
 	if name != "Garage pack" {
 		t.Errorf("a radio without a name must not clear the known name, got %q", name)
+	}
+}
+
+func TestReversedRegistryAlias(t *testing.T) {
+	names := map[string]string{"56:34:12:5E:33:C0": "HS0309"}
+	aliasReversedRegistryNames(names)
+	if names["C0:33:5E:12:34:56"] != "HS0309" {
+		t.Fatalf("the display-order address must find the cached name, got %v", names)
+	}
+	if names["56:34:12:5E:33:C0"] != "HS0309" {
+		t.Fatalf("the registry order must stay, got %v", names)
+	}
+}
+
+func TestStateKeepsNamedDevicesWhenTheListIsLong(t *testing.T) {
+	hub := NewHub(bluetooth.DefaultAdapter, NewStore(t.TempDir()))
+	hub.mu.Lock()
+	for index := 0; index < maxDevicesInState; index++ {
+		address := fmt.Sprintf("00:00:00:00:%02X:%02X", index/256, index%256)
+		hub.devices[address] = &DeviceInfo{Address: address, LastSeen: time.Now()}
+	}
+	const namedAddress = "AA:BB:CC:DD:EE:FF"
+	hub.devices[namedAddress] = &DeviceInfo{Address: namedAddress, Name: "HS0309", LastSeen: time.Now()}
+	hub.mu.Unlock()
+
+	found := false
+	for _, device := range hub.State().Devices {
+		if device.Address == namedAddress {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a named device must stay on the list when unnamed ones would fill it")
 	}
 }

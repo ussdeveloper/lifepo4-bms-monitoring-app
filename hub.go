@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-ole/go-ole"
 	"tinygo.org/x/bluetooth"
 
 	"golang.org/x/sys/windows/registry"
@@ -52,7 +53,7 @@ const (
 
 	// Unnamed devices without known services are probed once they have been
 	// seen a few times, so every device ends up in a definite state.
-	unnamedProbeHits = 3
+	unnamedProbeHits = 5
 
 	probeWorkers = 2
 
@@ -98,17 +99,23 @@ type Hub struct {
 	queue       []probeRequest
 	headSince   time.Time
 	lastProbe   map[string]time.Time
+	inflight    map[string]struct{}
 	signal      chan struct{}
 	startedAt   time.Time
 	batterySeen bool
 	registry    map[string]string
-	enabled     bool
-	enableErr   string
-	scanning    bool
-	seenCount   int
-	lastAdvert  time.Time
-	restarts    int
-	radios      []radioSummary
+	// cooling keeps names that just proved not to be a battery. Phones, watches
+	// and beacons rotate their Bluetooth address every few minutes, so the same
+	// device keeps arriving as a brand new one; without this it would be probed
+	// again and again, and every probe ties up the adapter the battery needs.
+	cooling    map[string]time.Time
+	enabled    bool
+	enableErr  string
+	scanning   bool
+	seenCount  int
+	lastAdvert time.Time
+	restarts   int
+	radios     []radioSummary
 }
 
 func NewHub(adapter *bluetooth.Adapter, store *Store) *Hub {
@@ -120,6 +127,8 @@ func NewHub(adapter *bluetooth.Adapter, store *Store) *Hub {
 		queued:     map[string]int{},
 		signal:     make(chan struct{}, 1),
 		lastProbe:  map[string]time.Time{},
+		inflight:   map[string]struct{}{},
+		cooling:    map[string]time.Time{},
 		startedAt:  time.Now(),
 		lastAdvert: time.Now(),
 	}
@@ -436,9 +445,14 @@ func (h *Hub) handleResult(result bluetooth.ScanResult) {
 	h.addresses[address] = result.Address
 	h.seenCount++
 	h.lastAdvert = time.Now()
-	h.onSeenLocked(info, result)
+	snapshot, remember := h.onSeenLocked(info, result)
 	display := displayName(info.Name)
 	h.mu.Unlock()
+	if remember {
+		// The scan callback must not wait on the disk: Windows drops
+		// advertisements while this function is still running.
+		h.remember(snapshot)
+	}
 
 	if newDevice {
 		if display == "" {
@@ -473,16 +487,18 @@ func (h *Hub) mergeSeenLocked(address, name, cachedName string, hasCachedName bo
 }
 
 // onSeenLocked decides whether a freshly seen device needs identification.
-func (h *Hub) onSeenLocked(info *DeviceInfo, result bluetooth.ScanResult) {
+// The returned snapshot is a battery that was identified in an earlier run and
+// should be written to disk after the caller has released the hub lock.
+func (h *Hub) onSeenLocked(info *DeviceInfo, result bluetooth.ScanResult) (DeviceInfo, bool) {
 	switch info.Status {
 	case statusBMS, statusProbing, statusNotBMS:
 		// Already identified, being identified, or rejected during this run.
 		// Only a deep scan revisits them.
-		return
+		return DeviceInfo{}, false
 	case statusUnavailable:
 		// Wait before knocking on the same closed door again.
 		if time.Since(h.lastProbe[info.Address]) < probeRetryDelay {
-			return
+			return DeviceInfo{}, false
 		}
 		info.Status = statusCandidate
 	}
@@ -490,14 +506,25 @@ func (h *Hub) onSeenLocked(info *DeviceInfo, result bluetooth.ScanResult) {
 		// Identified before, protocol is known: no probe needed.
 		info.Cached = false
 		info.Status = statusBMS
-		h.rememberLocked(info)
-		return
+		return *info, true
+	}
+	// A name that just proved not to be a battery is left alone for a while: the
+	// same phone comes back with a new address every few minutes, and probing it
+	// again costs the adapter time the battery needs.
+	if name := displayName(info.Name); name != "" {
+		if until, cooling := h.cooling[name]; cooling {
+			if time.Now().Before(until) {
+				return DeviceInfo{}, false
+			}
+			delete(h.cooling, name)
+		}
 	}
 	priority := classifyDevice(result, info)
 	if priority == 0 {
-		return
+		return DeviceInfo{}, false
 	}
 	h.enqueueLocked(info.Address, priority)
+	return DeviceInfo{}, false
 }
 
 // serviceAdvertiser reports which services a device announced while scanning.
@@ -530,8 +557,44 @@ func classifyDevice(result serviceAdvertiser, info *DeviceInfo) int {
 	return 0
 }
 
+// probeControl lets a timed-out identification close the link it opened.
+// Windows keeps a GATT session until Disconnect runs, and an abandoned probe
+// otherwise holds the only connection the BMS accepts.
+type probeControl struct {
+	mu         sync.Mutex
+	disconnect func()
+	abandoned  bool
+}
+
+func (p *probeControl) attach(disconnect func()) {
+	p.mu.Lock()
+	p.disconnect = disconnect
+	abandoned := p.abandoned
+	p.mu.Unlock()
+	if abandoned && disconnect != nil {
+		disconnect()
+	}
+}
+
+func (p *probeControl) abandon() func() {
+	p.mu.Lock()
+	p.abandoned = true
+	disconnect := p.disconnect
+	p.mu.Unlock()
+	return disconnect
+}
+
+func (p *probeControl) wasAbandoned() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.abandoned
+}
+
 // enqueueLocked adds a device to the priority queue, keeping it sorted.
 func (h *Hub) enqueueLocked(address string, priority int) {
+	if _, busy := h.inflight[address]; busy {
+		return
+	}
 	if current, ok := h.queued[address]; ok {
 		if current >= priority {
 			return
@@ -667,24 +730,35 @@ func (h *Hub) graceNeededLocked() bool {
 
 // probeSafely runs one identification with a hard deadline. A stuck BLE
 // operation must never block the whole queue, which is why the probe runs in a
-// separate pinned thread and the worker moves on after probeDeadline.
+// separate pinned thread and the worker moves on after probeDeadline. The link
+// is closed on that deadline: leaving it open occupies the only connection a
+// BMS accepts, which is how a slow adapter made the battery unreachable.
 func (h *Hub) probeSafely(ctx context.Context, address string) {
 	done := make(chan struct{})
+	control := &probeControl{}
+	h.mu.Lock()
+	h.inflight[address] = struct{}{}
+	h.mu.Unlock()
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer close(done)
 		defer func() {
+			h.mu.Lock()
+			delete(h.inflight, address)
+			h.mu.Unlock()
+		}()
+		defer func() {
 			if recovered := recover(); recovered != nil {
 				log.Printf("BLE panic while probing %s: %v", address, recovered)
 				h.mu.Lock()
-				if info, ok := h.devices[address]; ok {
+				if info, ok := h.devices[address]; ok && info.Status == statusProbing {
 					info.Status = statusUnavailable
 				}
 				h.mu.Unlock()
 			}
 		}()
-		h.probe(ctx, address)
+		h.probe(ctx, address, control)
 	}()
 
 	timer := time.NewTimer(probeDeadline)
@@ -693,17 +767,47 @@ func (h *Hub) probeSafely(ctx context.Context, address string) {
 	case <-done:
 	case <-ctx.Done():
 	case <-timer.C:
-		log.Printf("%s: identification did not finish within %s, moving on", address, probeDeadline)
+		log.Printf("%s: identification did not finish within %s, closing the link", address, probeDeadline)
+		if disconnect := control.abandon(); disconnect != nil {
+			go closeBLE(disconnect)
+		}
 		h.mu.Lock()
-		if info, ok := h.devices[address]; ok {
+		if info, ok := h.devices[address]; ok && info.Status == statusProbing {
 			info.Status = statusUnavailable
 		}
 		h.mu.Unlock()
 	}
 }
 
+// closeBLE runs Disconnect on a thread that has joined the WinRT multithreaded
+// apartment. The watchdog that gives up on a probe is not that thread.
+func closeBLE(disconnect func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	_ = ole.RoInitialize(1)
+	disconnect()
+}
+
 // probe connects to a device and checks whether it speaks a supported protocol.
-func (h *Hub) probe(ctx context.Context, address string) {
+// How long a name is left alone after it turned out not to be a battery, and
+// after a probe of it failed. Both are long on purpose: the interface must not
+// spend its time knocking on the same doors while the battery is waiting.
+const (
+	nameRejectCooldown = 30 * time.Minute
+	nameFailCooldown   = 10 * time.Minute
+)
+
+// coolNameLocked remembers that a name is not worth probing again for a while.
+// The caller holds the lock.
+func (h *Hub) coolNameLocked(name string, how time.Duration) {
+	clean := displayName(name)
+	if clean == "" {
+		return
+	}
+	h.cooling[clean] = time.Now().Add(how)
+}
+
+func (h *Hub) probe(ctx context.Context, address string, control *probeControl) {
 	h.mu.Lock()
 	info, ok := h.devices[address]
 	btAddress, hasAddress := h.addresses[address]
@@ -714,20 +818,31 @@ func (h *Hub) probe(ctx context.Context, address string) {
 	info.Status = statusProbing
 	h.mu.Unlock()
 
-	result, err := identifyDevice(h.adapter, btAddress, displayName(info.Name))
+	result, err := identifyDevice(h.adapter, btAddress, displayName(info.Name), control)
 	if ctx.Err() != nil {
 		return
 	}
 
+	abandoned := control != nil && control.wasAbandoned()
 	h.mu.Lock()
 	info = h.devices[address]
 	if info == nil {
 		h.mu.Unlock()
 		return
 	}
+	if abandoned && (err != nil || result.Protocol == "") {
+		// The deadline already moved on. A forced disconnect looks like "not a
+		// battery" and must not be stored, or the next start would skip it.
+		if info.Status == statusProbing {
+			info.Status = statusUnavailable
+		}
+		h.mu.Unlock()
+		return
+	}
 	if err != nil {
 		log.Printf("%s: probe failed: %v", address, err)
 		info.Status = statusUnavailable
+		h.coolNameLocked(info.Name, nameFailCooldown)
 		h.mu.Unlock()
 		return
 	}
@@ -740,6 +855,7 @@ func (h *Hub) probe(ctx context.Context, address string) {
 			info.Name = discovered
 		}
 		name := info.Name
+		h.coolNameLocked(name, nameRejectCooldown)
 		h.mu.Unlock()
 		h.store.SaveNotBMS(address, name)
 		return
@@ -763,10 +879,6 @@ func (h *Hub) probe(ctx context.Context, address string) {
 // remember stores an identified battery for the next run.
 func (h *Hub) remember(info DeviceInfo) {
 	h.store.SaveBattery(info)
-}
-
-func (h *Hub) rememberLocked(info *DeviceInfo) {
-	h.store.SaveBattery(*info)
 }
 
 // DeepScan queues every visible device again, including cached rejections.
@@ -868,7 +980,7 @@ func (h *Hub) State() HubState {
 		return lessByDisplayName(&state.Checking[i], &state.Checking[j])
 	})
 	sort.Slice(all, func(i, j int) bool {
-		return lessByDisplayName(&all[i], &all[j])
+		return lessForDeviceList(&all[i], &all[j])
 	})
 	if len(all) > maxDevicesInState {
 		all = all[:maxDevicesInState]
@@ -881,6 +993,19 @@ func (h *Hub) State() HubState {
 	}
 	sort.Strings(state.Manual)
 	return state
+}
+
+// lessForDeviceList puts devices that advertised a name ahead of silent ones,
+// then orders each group alphabetically. The snapshot is capped, and a plain
+// alphabetical sort filled that cap with nameless beacons, so named devices
+// (including the battery) disappeared from the list.
+func lessForDeviceList(a, b *DeviceInfo) bool {
+	leftNamed := displayName(a.Name) != ""
+	rightNamed := displayName(b.Name) != ""
+	if leftNamed != rightNamed {
+		return leftNamed
+	}
+	return lessByDisplayName(a, b)
 }
 
 // lessByDisplayName orders devices by name and, when the names are equal or
@@ -957,6 +1082,16 @@ func (h *Hub) Device(address string) (DeviceInfo, bool) {
 	return DeviceInfo{}, false
 }
 
+// ProbeBusy reports that an identification of this address is still inside the
+// Bluetooth stack. The monitoring session waits it out, so the two do not open
+// the one connection a BMS accepts at the same time.
+func (h *Hub) ProbeBusy(address string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, busy := h.inflight[address]
+	return busy
+}
+
 func (h *Hub) AddressOf(address string) (bluetooth.Address, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -1028,19 +1163,71 @@ func loadRegistryNames() map[string]string {
 			continue
 		}
 		if value, _, err := deviceKey.GetStringValue("Name"); err == nil && strings.TrimSpace(value) != "" {
-			names[address] = strings.TrimSpace(value)
+			rememberRegistryName(names, address, value)
 			deviceKey.Close()
 			continue
 		}
 		if data, _, err := deviceKey.GetBinaryValue("Name"); err == nil {
 			text := strings.TrimSpace(strings.TrimRight(string(data), "\x00"))
 			if text != "" {
-				names[address] = text
+				rememberRegistryName(names, address, text)
 			}
 		}
 		deviceKey.Close()
 	}
+	aliasReversedRegistryNames(names)
 	return names
+}
+
+// rememberRegistryName stores one cached name under the address as it is
+// written in the registry.
+func rememberRegistryName(names map[string]string, address, name string) {
+	name = strings.TrimSpace(name)
+	if address == "" || name == "" {
+		return
+	}
+	if _, exists := names[address]; exists {
+		return
+	}
+	names[address] = name
+}
+
+// aliasReversedRegistryNames also files each name under the byte-reversed
+// address. Windows stores BTHPORT keys little-endian, while the scanner prints
+// the address in display order, so a name cached by the system never matched
+// the device on the list.
+func aliasReversedRegistryNames(names map[string]string) {
+	type alias struct {
+		address string
+		name    string
+	}
+	extras := make([]alias, 0)
+	for address, name := range names {
+		reversed := reverseMAC(address)
+		if reversed == address {
+			continue
+		}
+		if _, exists := names[reversed]; exists {
+			continue
+		}
+		extras = append(extras, alias{address: reversed, name: name})
+	}
+	for _, extra := range extras {
+		if _, exists := names[extra.address]; !exists {
+			names[extra.address] = extra.name
+		}
+	}
+}
+
+func reverseMAC(address string) string {
+	parts := strings.Split(address, ":")
+	if len(parts) != 6 {
+		return address
+	}
+	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
+		parts[left], parts[right] = parts[right], parts[left]
+	}
+	return strings.Join(parts, ":")
 }
 
 func formatRegistryAddress(raw string) string {

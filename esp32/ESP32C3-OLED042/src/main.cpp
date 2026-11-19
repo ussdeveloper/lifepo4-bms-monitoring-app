@@ -11,6 +11,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <esp_coexist.h>
+#include <string.h>
 #include <time.h>
 
 #include "appconfig.h"
@@ -48,6 +49,31 @@ Monitor monitor;
 uint32_t lastReadingAt = 0;
 uint32_t lastDisplayAt = 0;
 uint32_t lastPublishAt = 0;
+// The reading is filled in by the Bluetooth task and published from the main
+// loop. Building the MQTT document on the Bluetooth task overflowed its stack
+// and allocated on the heap while the radio was busy.
+SemaphoreHandle_t monitorLock = nullptr;
+volatile bool publishPending = false;
+
+void copyStatus(char *dest, size_t size, const String &source) {
+    if (size == 0) {
+        return;
+    }
+    strncpy(dest, source.c_str(), size - 1);
+    dest[size - 1] = '\0';
+}
+
+void lockMonitor() {
+    if (monitorLock != nullptr) {
+        xSemaphoreTake(monitorLock, portMAX_DELAY);
+    }
+}
+
+void unlockMonitor() {
+    if (monitorLock != nullptr) {
+        xSemaphoreGive(monitorLock);
+    }
+}
 const uint32_t DISPLAY_INTERVAL_MS = 250;
 // A heap this small cannot survive the next allocation: the device answers for
 // a while and then stops somewhere it cannot recover from, so it restarts while
@@ -65,16 +91,17 @@ Display::Status statusForDisplay() {
     const NetworkStatus &networkStatus = network.status();
     status.accessPoint = networkStatus.accessPoint;
     status.wifiConnected = networkStatus.connected;
-    status.ssid = networkStatus.ssid;
-    status.ip = networkStatus.ip;
-    status.accessPointSsid = networkStatus.accessPointSsid;
-    status.accessPointPassword = networkStatus.accessPointPassword;
+    copyStatus(status.ssid, sizeof(status.ssid), networkStatus.ssid);
+    copyStatus(status.ip, sizeof(status.ip), networkStatus.ip);
+    copyStatus(status.accessPointSsid, sizeof(status.accessPointSsid), networkStatus.accessPointSsid);
+    copyStatus(status.accessPointPassword, sizeof(status.accessPointPassword),
+               networkStatus.accessPointPassword);
     status.accessPointClients = networkStatus.accessPointClients;
-    status.wifiError = networkStatus.error;
+    copyStatus(status.wifiError, sizeof(status.wifiError), networkStatus.error);
     status.batteryConnected = bms.connected();
     status.takeover = bms.takeover();
-    status.batteryName = bms.name();
-    status.batteryError = bms.error();
+    copyStatus(status.batteryName, sizeof(status.batteryName), bms.name());
+    copyStatus(status.batteryError, sizeof(status.batteryError), bms.error());
     status.devicesSeen = bms.devicesSeen();
     status.releaseLeft = bms.releasedSeconds();
     return status;
@@ -82,7 +109,8 @@ Display::Status statusForDisplay() {
 
 void onSample(const Sample &sample) {
     // One reading, three consumers: the interface (through the monitor), the
-    // chart window and MQTT.
+    // chart window and MQTT. The document itself is built on the main loop.
+    lockMonitor();
     monitor.connected = true;
     monitor.sample = sample;
     monitor.samples = bms.samples();
@@ -104,11 +132,12 @@ void onSample(const Sample &sample) {
         stats.record(history.at(history.count() - 1));
     }
     lastReadingAt = millis();
-    lastPublishAt = millis();
-    mqtt.publish(monitor);
+    publishPending = true;
+    unlockMonitor();
 }
 
 void onStateChange() {
+    lockMonitor();
     monitor.connected = bms.connected();
     if (!monitor.connected) {
         // Keep the last reading: the interface shows it as the last known
@@ -116,6 +145,7 @@ void onStateChange() {
         // sleeps or another device took it.
         monitor.updatedAt = millis();
     }
+    unlockMonitor();
 }
 
 void setupClock() {
@@ -154,13 +184,18 @@ void guardMemory() {
                            " readings, oldest dropped");
     }
     const uint32_t free = ESP.getFreeHeap();
-    if (free < CRITICAL_HEAP_BYTES) {
+    const uint32_t largest = ESP.getMaxAllocHeap();
+    // A fragmented heap still reports tens of kilobytes free while the largest
+    // piece is too small for the state document. That is the hang: allocations
+    // fail and the device keeps running without answering.
+    const bool tight = free < CRITICAL_HEAP_BYTES || largest < 8 * 1024;
+    if (tight) {
         if (lowSince == 0) {
             lowSince = millis();
-            logLine("mem", "free memory fell to " + String(free / 1024) + " KB, watching");
+            logLine("mem", "free memory fell to " + String(free / 1024) + " KB, largest block " +
+                               String(largest / 1024) + " KB, watching");
         } else if (millis() - lowSince > CRITICAL_HEAP_MS) {
-            logLine("mem", "free memory stayed under " + String(CRITICAL_HEAP_BYTES / 1024) +
-                               " KB for " + String(CRITICAL_HEAP_MS / 60000) +
+            logLine("mem", "memory stayed tight for " + String(CRITICAL_HEAP_MS / 60000) +
                                " minutes, restarting");
             delay(300);
             ESP.restart();
@@ -187,7 +222,8 @@ void heartbeat() {
     last = millis();
     const NetworkStatus &networkStatus = network.status();
     logLine("beat", String(millis() / 1000) + " s, " + String(ESP.getFreeHeap() / 1024) +
-                        " KB free, chart " + String(history.count()) + "/" +
+                        " KB free, largest " + String(ESP.getMaxAllocHeap() / 1024) +
+                        " KB, chart " + String(history.count()) + "/" +
                         String(history.capacity()) + ", clients " +
                         String(networkStatus.accessPointClients) + ", wifi " +
                         (networkStatus.connected ? networkStatus.ip
@@ -196,6 +232,7 @@ void heartbeat() {
 }  // namespace
 
 void setup() {
+    monitorLock = xSemaphoreCreateMutex();
     Serial.begin(115200);
     delay(200);
     Serial.println();
@@ -268,6 +305,15 @@ void setup() {
 
 void loop() {
     network.loop();
+    if (publishPending) {
+        Monitor copy;
+        lockMonitor();
+        copy = monitor;
+        publishPending = false;
+        unlockMonitor();
+        lastPublishAt = millis();
+        mqtt.publish(copy);
+    }
     // While the setup access point is up, Bluetooth stays quiet: one radio
     // serves both, and the access point has to be easy to find. The same during
     // an update, which needs the radio to itself to be quick.
@@ -291,7 +337,11 @@ void loop() {
     if (millis() - lastDisplayAt >= DISPLAY_INTERVAL_MS) {
         lastDisplayAt = millis();
         const uint32_t before = millis();
-        display.draw(statusForDisplay(), monitor.sample, monitor.sample.timestamp > 0);
+        Sample shown;
+        lockMonitor();
+        shown = monitor.sample;
+        unlockMonitor();
+        display.draw(statusForDisplay(), shown, shown.timestamp > 0);
         const uint32_t spent = millis() - before;
         if (spent > 2000) {
             display.giveUp("a redraw took more than two seconds");
@@ -309,9 +359,19 @@ void loop() {
 
     // MQTT is published per reading; if the broker was away, send the last
     // reading again once it comes back.
-    if (mqtt.connected() && monitor.sample.timestamp > 0 && millis() - lastPublishAt > 60000) {
-        lastPublishAt = millis();
-        mqtt.publish(monitor);
+    if (mqtt.connected() && millis() - lastPublishAt > 60000) {
+        Monitor copy;
+        lockMonitor();
+        copy = monitor;
+        const bool haveSample = copy.sample.timestamp > 0;
+        if (haveSample) {
+            publishPending = false;
+            lastPublishAt = millis();
+        }
+        unlockMonitor();
+        if (haveSample) {
+            mqtt.publish(copy);
+        }
     }
     delay(2);
 }

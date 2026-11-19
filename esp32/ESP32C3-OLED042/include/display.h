@@ -22,19 +22,21 @@ public:
     bool available() const { return ready_; }
 
     // The state the screens are drawn from.
+    // Fixed text buffers: the screen is redrawn several times a second, and a
+    // String per field fragmented the heap until the device stopped allocating.
     struct Status {
         bool accessPoint = false;
         bool wifiConnected = false;
-        String ssid;
-        String ip;
-        String accessPointSsid;
-        String accessPointPassword;
+        char ssid[33] = {0};
+        char ip[16] = {0};
+        char accessPointSsid[33] = {0};
+        char accessPointPassword[65] = {0};
         uint8_t accessPointClients = 0;
-        String wifiError;
+        char wifiError[48] = {0};
         bool batteryConnected = false;
         bool takeover = false;
-        String batteryName;
-        String batteryError;
+        char batteryName[33] = {0};
+        char batteryError[64] = {0};
         uint32_t devicesSeen = 0;
         uint32_t releaseLeft = 0;
     };
@@ -49,8 +51,8 @@ private:
     void drawWifi(const Status &status);
     void drawNoBattery(const Status &status);
     void drawBattery(const Status &status, const Sample &sample);
-    void drawWarning(const Status &status, const Sample &sample, const String &headline,
-                     const String &detail);
+    void drawWarning(const Status &status, const Sample &sample, const char *headline,
+                     const char *detail);
     void drawBatteryIcon(int x, int y, int width, int height, int percent);
     void drawWarningIcon(int x, int y, int size);
     void centerText(const char *text, int y);

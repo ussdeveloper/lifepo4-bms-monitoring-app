@@ -256,6 +256,14 @@ func (s *Session) run(ctx context.Context, address string) {
 	everConnected := false
 	failures := 0
 	for ctx.Err() == nil {
+		if s.hub.ProbeBusy(address) {
+			// Identification still holds the link. Connecting now would take
+			// the battery away from the probe and both sides would fail.
+			if !sleepCtx(ctx, time.Second) {
+				return
+			}
+			continue
+		}
 		attempt++
 		s.setAttempt(attempt)
 		btAddress, ok := s.hub.AddressOf(address)

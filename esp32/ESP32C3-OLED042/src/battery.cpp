@@ -269,7 +269,10 @@ void History::add(const Sample &sample) {
 }
 
 bool History::guardMemory() {
-    if (ESP.getFreeHeap() >= LOW_HEAP_BYTES || capacity_ <= MIN_HISTORY_POINTS) {
+    // Free heap can stay large while it is broken into pieces too small for the
+    // next JSON document. The largest block is what an allocation actually gets.
+    const bool room = ESP.getFreeHeap() >= LOW_HEAP_BYTES && ESP.getMaxAllocHeap() >= 12 * 1024;
+    if (room || capacity_ <= MIN_HISTORY_POINTS) {
         return false;
     }
     // Halve the window, dropping the oldest readings first, and keep going

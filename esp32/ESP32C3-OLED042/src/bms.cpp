@@ -56,15 +56,31 @@ void notifyCallback(BLERemoteCharacteristic *characteristic, uint8_t *data, size
     }
 }
 
+void copyText(char *dest, size_t size, const char *source) {
+    if (size == 0) {
+        return;
+    }
+    if (source == nullptr) {
+        dest[0] = '\0';
+        return;
+    }
+    strncpy(dest, source, size - 1);
+    dest[size - 1] = '\0';
+}
+
 // A name is only a hint; the real check is the service the device exposes.
-bool looksLikeBattery(const String &name) {
-    if (name.length() == 0) {
+bool looksLikeBattery(const char *name) {
+    if (name == nullptr || name[0] == '\0') {
         return false;
     }
-    return name.startsWith("HS03") || name.startsWith("HS04") || name.indexOf("HiLink") >= 0 ||
-           name.indexOf("BMS") >= 0 || name.indexOf("Battery") >= 0 ||
-           name.indexOf("battery") >= 0 || name.indexOf("Humsienk") >= 0;
+    return strncmp(name, "HS03", 4) == 0 || strncmp(name, "HS04", 4) == 0 || strstr(name, "HiLink") != nullptr ||
+           strstr(name, "BMS") != nullptr || strstr(name, "Battery") != nullptr ||
+           strstr(name, "battery") != nullptr || strstr(name, "Humsienk") != nullptr;
 }
+
+// The notify callback and the poll loop run on different tasks. The copy below
+// is the only thing that crosses, and it stays inside this lock.
+portMUX_TYPE rxMux = portMUX_INITIALIZER_UNLOCKED;
 
 void bmsTask(void *parameter) { static_cast<Bms *>(parameter)->run(); }
 }  // namespace
@@ -84,7 +100,9 @@ void Bms::begin(AppConfig *config) {
 
     // The stack itself is started by the task below (and stopped again while
     // the setup access point is up), so nothing here touches the radio.
-    xTaskCreate(bmsTask, "bms", 8192, this, 1, nullptr);
+    // 12 KB: connecting and the notification copy share this stack. 8 KB was the
+    // whole budget, and a reading that also built MQTT JSON overflowed it.
+    xTaskCreate(bmsTask, "bms", 12288, this, 1, nullptr);
     logLine("bms", "Bluetooth task started");
 }
 
@@ -270,20 +288,23 @@ void Bms::finishScan() {
     }
     BLEScanResults results = scanner->getResults();
     const int found = results.getCount();
-    String candidate;
+    char candidate[18] = {0};
     uint32_t candidateType = BLE_ADDR_TYPE_PUBLIC;
     const String previousAddress = address_;
-    String candidateName;
+    char candidateName[32] = {0};
     int candidateRssi = -32768;
+    bool candidateKnown = false;
     uint32_t fresh = 0;
     seenCount_ = 0;
 
     for (int index = 0; index < found; index++) {
         BLEAdvertisedDevice device = results.getDevice(index);
         adverts_++;
-        const String name = String(device.getName().c_str());
-        const String deviceAddress = String(device.getAddress().toString().c_str());
-        if (deviceAddress.length() > 0) {
+        char name[32];
+        char deviceAddress[18];
+        copyText(name, sizeof(name), device.getName().c_str());
+        copyText(deviceAddress, sizeof(deviceAddress), device.getAddress().toString().c_str());
+        if (deviceAddress[0] != '\0') {
             fresh++;
         }
         // A battery from the remembered list is a candidate even when it does
@@ -291,11 +312,12 @@ void Bms::finishScan() {
         const bool known = config_ != nullptr && config_->isKnownAddress(deviceAddress);
         const bool isBattery = known || looksLikeBattery(name);
         // The list the interface shows: this is what makes it obvious whether
-        // the scan hears anything at all.
-        if (seenCount_ < MAX_SEEN && deviceAddress.length() > 0) {
+        // the scan hears anything at all. Fixed buffers, so a scan round does
+        // not allocate a string per device.
+        if (seenCount_ < MAX_SEEN && deviceAddress[0] != '\0') {
             SeenDevice &entry = seen_[seenCount_++];
-            entry.address = deviceAddress;
-            entry.name = name;
+            copyText(entry.address, sizeof(entry.address), deviceAddress);
+            copyText(entry.name, sizeof(entry.name), name);
             entry.rssi = device.getRSSI();
             entry.battery = isBattery;
         }
@@ -309,21 +331,20 @@ void Bms::finishScan() {
         }
         // A known battery wins over an unknown one, a stronger signal over a
         // weaker one.
-        const bool better = candidate.length() == 0 ||
-                            (known && !config_->isKnownAddress(candidate)) ||
-                            (device.getRSSI() > candidateRssi &&
-                             known == config_->isKnownAddress(candidate));
+        const bool better = candidate[0] == '\0' || (known && !candidateKnown) ||
+                            (device.getRSSI() > candidateRssi && known == candidateKnown);
         if (better) {
-            candidate = deviceAddress;
+            copyText(candidate, sizeof(candidate), deviceAddress);
             candidateType = device.getAddressType();
-            candidateName = name;
+            copyText(candidateName, sizeof(candidateName), name);
             candidateRssi = device.getRSSI();
+            candidateKnown = known;
         }
     }
     scanner->clearResults();
     devicesSeen_ = fresh;
 
-    if (candidate.length() == 0) {
+    if (candidate[0] == '\0') {
         // Nothing recognised in the air: the remembered batteries are asked
         // directly, because a BMS that another device holds does not advertise.
         tryKnownBatteries();
@@ -545,45 +566,58 @@ void Bms::sendCommand(uint8_t command) {
     }
     uint8_t frame[5];
     buildCommand(command, frame);
+    portENTER_CRITICAL(&rxMux);
     rxReady_ = false;
     rxLength_ = 0;
+    portEXIT_CRITICAL(&rxMux);
     awaiting_ = command;
     awaitingUntil_ = millis() + COMMAND_TIMEOUT_MS;
     writeCharacteristic->writeValue(frame, sizeof(frame), true);
 }
 
 void Bms::handleNotification(const uint8_t *data, size_t length) {
-    if (rxReady_ || data == nullptr || length == 0 || length > RX_SIZE) {
+    if (data == nullptr || length == 0 || length > RX_SIZE) {
         return;
     }
-    memcpy(rx_, data, length);
-    rxLength_ = length;
-    rxReady_ = true;
+    portENTER_CRITICAL(&rxMux);
+    if (!rxReady_) {
+        memcpy(rx_, data, length);
+        rxLength_ = length;
+        rxReady_ = true;
+    }
+    portEXIT_CRITICAL(&rxMux);
 }
 
 void Bms::takeNotification() {
-    rxReady_ = false;
-    const size_t length = rxLength_;
-    if (length < 5 || rx_[0] != 0xAA) {
+    uint8_t frame[RX_SIZE];
+    size_t length = 0;
+    portENTER_CRITICAL(&rxMux);
+    if (rxReady_) {
+        length = rxLength_;
+        memcpy(frame, rx_, length);
+        rxReady_ = false;
+    }
+    portEXIT_CRITICAL(&rxMux);
+    if (length < 5 || frame[0] != 0xAA) {
         return;
     }
-    const size_t expected = static_cast<size_t>(rx_[2]) + 5;
+    const size_t expected = static_cast<size_t>(frame[2]) + 5;
     if (expected > length) {
         return;
     }
     uint16_t sum = 0;
     for (size_t index = 1; index + 2 < expected; index++) {
-        sum += rx_[index];
+        sum += frame[index];
     }
-    const uint16_t want = static_cast<uint16_t>(rx_[expected - 2]) |
-                          (static_cast<uint16_t>(rx_[expected - 1]) << 8);
+    const uint16_t want = static_cast<uint16_t>(frame[expected - 2]) |
+                          (static_cast<uint16_t>(frame[expected - 1]) << 8);
     if (sum != want) {
         logLine("bms", "the BMS answer failed its checksum");
         awaiting_ = 0;
         return;
     }
-    const uint8_t command = rx_[1];
-    const uint8_t *payload = rx_ + 3;
+    const uint8_t command = frame[1];
+    const uint8_t *payload = frame + 3;
     const size_t payloadLength = expected - 5;
     switch (command) {
         case COMMAND_MODEL:

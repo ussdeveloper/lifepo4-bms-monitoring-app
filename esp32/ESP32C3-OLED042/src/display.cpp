@@ -25,6 +25,7 @@ bool Display::begin(AppConfig *config) {
         scl_ = config->displayScl;
         address_ = config->displayAddress;
         Wire.begin(sda_, scl_);
+        Wire.setTimeOut(100);
         Wire.beginTransmission(address_);
         if (Wire.endTransmission() == 0) {
             oled.setI2CAddress(address_ << 1);
@@ -41,6 +42,7 @@ bool Display::begin(AppConfig *config) {
     for (size_t index = 0; index < I2C_CANDIDATE_COUNT; index++) {
         const I2cCandidate &candidate = I2C_CANDIDATES[index];
         Wire.begin(candidate.sda, candidate.scl);
+        Wire.setTimeOut(100);
         for (uint8_t address : DISPLAY_ADDRESSES) {
             Wire.beginTransmission(address);
             if (Wire.endTransmission() != 0) {
@@ -164,11 +166,11 @@ void Display::draw(const Status &status, const Sample &sample, bool haveSample) 
         if (sample.problemCode != 0) {
             char code[16];
             snprintf(code, sizeof(code), "0x%lX", static_cast<unsigned long>(sample.problemCode));
-            drawWarning(status, sample, problemText(sample.problemCode), String(code));
+            drawWarning(status, sample, problemText(sample.problemCode), code);
             return;
         }
-        const String detail = "cell " + String(sample.balance.weak) + " " +
-                              String(sample.balance.spreadMv) + "mV";
+        char detail[24];
+        snprintf(detail, sizeof(detail), "cell %d %dmV", sample.balance.weak, sample.balance.spreadMv);
         drawWarning(status, sample, "CELL DRIFT", detail);
         return;
     }
@@ -179,14 +181,14 @@ void Display::drawAccessPoint(const Status &status) {    oled.clearBuffer();
     oled.setFont(u8g2_font_6x10_tf);
     oled.drawStr(0, 9, "SETUP: JOIN WIFI");
     oled.setFont(u8g2_font_5x7_tf);
-    oled.drawStr(0, 20, status.accessPointSsid.c_str());
-    String password = status.accessPointPassword;
-    if (password.length() == 0) {
-        password = "(open)";
+    oled.drawStr(0, 20, status.accessPointSsid);
+    char password[20];
+    if (status.accessPointPassword[0] == '\0') {
+        snprintf(password, sizeof(password), "(open)");
     } else {
-        password = "pass " + password;
+        snprintf(password, sizeof(password), "pass %.8s", status.accessPointPassword);
     }
-    oled.drawStr(0, 30, password.c_str());
+    oled.drawStr(0, 30, password);
     oled.setFont(u8g2_font_6x10_tf);
     oled.drawStr(0, 40, "192.168.4.1");
     oled.sendBuffer();
@@ -197,12 +199,13 @@ void Display::drawWifi(const Status &status) {
     oled.setFont(u8g2_font_6x10_tf);
     oled.drawStr(0, 9, "WIFI");
     oled.setFont(u8g2_font_5x7_tf);
-    const String ssid = status.ssid.length() > 0 ? status.ssid : String("(not set)");
-    oled.drawStr(0, 20, ssid.substring(0, 13).c_str());
-    String state = status.wifiError.length() > 0 ? status.wifiError : String("connecting...");
-    oled.drawStr(0, 30, state.substring(0, 13).c_str());
-    if (status.ip.length() > 0) {
-        oled.drawStr(0, 40, status.ip.c_str());
+    char line[16];
+    snprintf(line, sizeof(line), "%.13s", status.ssid[0] != '\0' ? status.ssid : "(not set)");
+    oled.drawStr(0, 20, line);
+    snprintf(line, sizeof(line), "%.13s", status.wifiError[0] != '\0' ? status.wifiError : "connecting...");
+    oled.drawStr(0, 30, line);
+    if (status.ip[0] != '\0') {
+        oled.drawStr(0, 40, status.ip);
     }
     oled.sendBuffer();
 }
@@ -212,29 +215,31 @@ void Display::drawNoBattery(const Status &status) {
     oled.setFont(u8g2_font_6x10_tf);
     oled.drawStr(0, 9, "NO BATTERY");
     oled.setFont(u8g2_font_5x7_tf);
-    if (status.batteryError.length() > 0) {
-        oled.drawStr(0, 20, status.batteryError.substring(0, 13).c_str());
+    if (status.batteryError[0] != '\0') {
+        char line[16];
+        snprintf(line, sizeof(line), "%.13s", status.batteryError);
+        oled.drawStr(0, 20, line);
     }
-    const String devices = String(status.devicesSeen) + " devices seen";
-    oled.drawStr(0, 30, devices.c_str());
-    oled.drawStr(0, 40, status.ip.c_str());
+    char devices[20];
+    snprintf(devices, sizeof(devices), "%lu devices seen", static_cast<unsigned long>(status.devicesSeen));
+    oled.drawStr(0, 30, devices);
+    oled.drawStr(0, 40, status.ip);
     oled.sendBuffer();
 }
 
 void Display::drawBattery(const Status &status, const Sample &sample) {
     oled.clearBuffer();
     oled.setFont(u8g2_font_6x10_tf);
-    String title = status.batteryName.length() > 0 ? status.batteryName : String("BATTERY");
-    if (title.length() > 12) {
-        title = title.substring(0, 12);
-    }
-    oled.drawStr(0, 9, title.c_str());
+    char title[16];
+    snprintf(title, sizeof(title), "%.12s", status.batteryName[0] != '\0' ? status.batteryName : "BATTERY");
+    oled.drawStr(0, 9, title);
 
     // The state of charge, big, with a battery symbol filled to the same level.
     oled.setFont(u8g2_font_logisoso16_tn);
-    const String percent = String(sample.soc);
-    oled.drawStr(0, 30, percent.c_str());
-    const int width = oled.getStrWidth(percent.c_str());
+    char percent[8];
+    snprintf(percent, sizeof(percent), "%d", sample.soc);
+    oled.drawStr(0, 30, percent);
+    const int width = oled.getStrWidth(percent);
     oled.drawStr(width + 2, 30, "%");
     oled.setFont(u8g2_font_6x10_tf);
     drawBatteryIcon(width + 18, 15, 26, 14, sample.soc);
@@ -252,14 +257,18 @@ void Display::drawBattery(const Status &status, const Sample &sample) {
     oled.sendBuffer();
 }
 
-void Display::drawWarning(const Status &status, const Sample &sample, const String &headline,
-                          const String &detail) {
+void Display::drawWarning(const Status &status, const Sample &sample, const char *headline,
+                          const char *detail) {
     oled.clearBuffer();
     drawWarningIcon(0, 2, 14);
     oled.setFont(u8g2_font_6x10_tf);
-    oled.drawStr(18, 12, headline.substring(0, 9).c_str());
+    char headlineLine[16];
+    snprintf(headlineLine, sizeof(headlineLine), "%.9s", headline != nullptr ? headline : "");
+    oled.drawStr(18, 12, headlineLine);
     oled.setFont(u8g2_font_5x7_tf);
-    oled.drawStr(0, 26, detail.substring(0, 13).c_str());
+    char detailLine[16];
+    snprintf(detailLine, sizeof(detailLine), "%.13s", detail != nullptr ? detail : "");
+    oled.drawStr(0, 26, detailLine);
     char line[24];
     snprintf(line, sizeof(line), "%.2fV %d%%", sample.voltageV, sample.soc);
     oled.drawStr(0, 36, line);

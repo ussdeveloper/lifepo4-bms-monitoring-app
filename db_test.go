@@ -206,6 +206,41 @@ func TestHistoryDBSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestHistoryDBStatsDoNotWriteAndRefreshAfterFlush(t *testing.T) {
+	history := NewHistoryDB(t.TempDir())
+	if !history.Enabled() {
+		t.Fatal("the database must open")
+	}
+	defer history.Close()
+
+	const address = "11:22:33:44:55:66"
+	start := time.Now().Add(-5 * time.Minute).Truncate(time.Second)
+	for index := 0; index < 3; index++ {
+		history.Record(address, sampleAt(address, start.Add(time.Duration(index)*time.Minute), []int{3360, 3361}))
+	}
+
+	// Reading the statistics is what every interface poll does. It must never
+	// turn into a write: the queued readings stay queued.
+	if stats := history.Stats(); stats.Samples != 0 {
+		t.Errorf("before a flush the table is empty, got %d samples", stats.Samples)
+	}
+	history.mu.Lock()
+	pending := len(history.pending)
+	history.mu.Unlock()
+	if pending != 3 {
+		t.Errorf("Stats must not flush the queue, %d readings left of 3", pending)
+	}
+
+	history.Flush()
+	if stats := history.Stats(); stats.Samples != 3 {
+		t.Errorf("after a flush the readings are counted, got %d", stats.Samples)
+	}
+	// A second call is served from the cache, so the numbers stay the same.
+	if cached := history.Stats(); cached.Samples != 3 || cached.Path != history.Path() {
+		t.Errorf("cached statistics are wrong: %+v", cached)
+	}
+}
+
 func TestHistoryDBWithoutDirectory(t *testing.T) {
 	history := NewHistoryDB("")
 	if history.Enabled() {

@@ -155,7 +155,7 @@ supply, so the scan is tuned for range rather than for saving energy:
 | Setting | Value | Why |
 |---|---|---|
 | Round length | 8 s listening, 1 s pause | the radio is listening ~89 % of the time |
-| Scan window | 100 ms of every 100 ms | no gaps inside a round, so a weak packet is not missed |
+| Scan window | 75 ms of every 100 ms | Wi-Fi keeps airtime for beacons; a full window made the page and MQTT stop after a while |
 | Active scan | on | asks every device for its name, doubling the packets heard |
 | Transmit power | +9 dBm (`ESP_PWR_LVL_P9`) | a battery at the edge of the range answers the first time |
 | Coexistence | `ESP_COEX_PREFER_BT` | the radio favours Bluetooth over Wi-Fi |
@@ -166,7 +166,7 @@ Measured on this board: 11 devices heard with the old settings, 15–19 after, a
 update takes ~23 s because Bluetooth is paused while one is written.
 
 During an update the radio belongs to the transfer: `web.updating()` makes the
-main loop pause Bluetooth for the duration, otherwise a 100 % scan starves the
+main loop pause Bluetooth for the duration, otherwise the scan starves the
 upload.
 
 ## What is kept in flash

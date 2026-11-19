@@ -8,8 +8,8 @@
 // Shown in the interface, in the MQTT discovery document and in the log.
 // Every firmware change gets a new version and a build number: the interface
 // prints both, so it is always obvious which build is running on the device.
-#define APP_VERSION "esp32-0.2.1"
-#define APP_BUILD 9
+#define APP_VERSION "esp32-0.2.2"
+#define APP_BUILD 10
 // The version and build history is in esp32/ESP32C3-OLED042/CHANGELOG.md.
 
 // Preferences namespace in NVS: everything the user can change lives here, next
@@ -54,12 +54,13 @@ static const uint32_t BLE_RETRY_MS = 5000;
 // rounds only so the Wi-Fi side can breathe.
 static const uint32_t BLE_SCAN_SECONDS = 8;
 static const uint32_t BLE_SCAN_PAUSE_MS = 1000;
-// Measured in units of 0.625 ms. A window equal to the interval means the
-// receiver never stops listening during a round: a battery at the edge of the
-// range loses packets to noise, and every extra listen is another chance to
-// catch one.
+// Measured in units of 0.625 ms. The window stays shorter than the interval:
+// a window that fills the whole interval gives Bluetooth the radio without a
+// gap, and on the ESP32-C3 that starves Wi-Fi until the page, MQTT and the
+// access point stop answering. 75 ms of every 100 ms is still most of the
+// round, and the rest is the airtime Wi-Fi needs for beacons.
 static const uint16_t BLE_SCAN_INTERVAL = 160;  // 100 ms
-static const uint16_t BLE_SCAN_WINDOW = 160;    // the whole interval
+static const uint16_t BLE_SCAN_WINDOW = 120;    // 75 ms
 
 // The interface keeps a window of recent readings in memory for the charts: a
 // device has no disk to write a long history to. The window is a ring, so it

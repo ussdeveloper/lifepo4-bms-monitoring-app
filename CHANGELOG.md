@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* `/api/state` is answered in 2 ms instead of 25 ms. Reading the state used to
+  flush the history queue and run two full scans of the samples table (tens of
+  thousands of rows) on every poll — once a second, per open window. The totals
+  are now one query, cached for ten seconds and recomputed only after a batch is
+  written; reading the state never writes.
+* Probing is bounded. Phones, tablets and beacons rotate their Bluetooth address
+  every few minutes, so the same device kept returning as a new one and was
+  identified again and again, tying up the only adapter. A name that proved not
+  to be a battery is left alone for 30 minutes (10 after a failed connection),
+  and a silent device needs five advertisements before it is probed. This also
+  gives the battery more time on the radio.
+* The interface stops redrawing what did not change: the device list and the
+  power graph are only rebuilt when their data differs, and nothing is polled
+  while the window is minimised. The web fonts no longer block the first paint,
+  so an offline machine shows the panel immediately. A signal level Windows
+  reports as -127 ("unknown") is shown as a dash instead of a number.
+
+### Fixed
+
+* A battery that answered before its services were ready was stored as "not a BMS" and then skipped on every later start. An empty service list is retried instead of being remembered.
+* An identification that ran past its deadline now closes the Bluetooth link. The session waits while that identification is still in progress, so the two no longer fight over the one connection a BMS accepts.
+* The Bluetooth device list keeps named devices when the room is full of nameless advertisements. Names cached by Windows are also matched when the registry stores the address byte-reversed.
+* Remembering a battery no longer writes to disk from inside the scan callback.
+
 ### Added
 
 * MQTT to Home Assistant now publishes every voltage and current with three

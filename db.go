@@ -25,7 +25,17 @@ type HistoryDB struct {
 	path string
 	// batch collects rows so a reading costs one transaction, not one fsync.
 	pending []pendingSample
+	// The totals are a full scan of the samples table, and the interface asks
+	// for them on every poll (once a second). They are therefore cached and
+	// only recomputed when a batch was written or the cache has aged out.
+	statsCache historyStats
+	statsAt    time.Time
+	statsDirty bool
 }
+
+// statsMaxAge bounds how stale the cached totals may be when nothing is being
+// written (a sleeping battery still shows the same numbers).
+const statsMaxAge = 10 * time.Second
 
 type pendingSample struct {
 	address string
@@ -127,6 +137,7 @@ func (h *HistoryDB) Record(address string, sample *Sample) {
 	copied.CellsMv = append([]int(nil), sample.CellsMv...)
 	h.mu.Lock()
 	h.pending = append(h.pending, pendingSample{address: address, sample: &copied})
+	h.statsDirty = true
 	h.mu.Unlock()
 }
 
@@ -144,7 +155,11 @@ func (h *HistoryDB) Flush() {
 
 	if err := writeBatch(db, batch); err != nil {
 		log.Printf("cannot write the history database: %v", err)
+		return
 	}
+	h.mu.Lock()
+	h.statsDirty = true
+	h.mu.Unlock()
 }
 
 func writeBatch(db *sql.DB, batch []pendingSample) error {
@@ -343,27 +358,42 @@ type historyStats struct {
 	Bytes     int64  `json:"bytes"`
 }
 
+// Stats reports what the history database holds. It is called on every poll, so
+// the answer is cached: a full scan of a table with tens of thousands of rows
+// has no business running once a second, and reading the state must never
+// trigger a write (which is why nothing here flushes the queue).
 func (h *HistoryDB) Stats() historyStats {
-	stats := historyStats{Path: h.Path()}
 	if !h.Enabled() {
-		return stats
+		return historyStats{Path: h.Path()}
 	}
-	h.Flush()
-	_ = h.db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT address), MIN(ts), MAX(ts) FROM samples`).
-		Scan(&stats.Samples, &stats.Batteries, new(sql.NullInt64), new(sql.NullInt64))
+	h.mu.Lock()
+	cached := h.statsCache
+	fresh := !h.statsDirty && !h.statsAt.IsZero() && time.Since(h.statsAt) < statsMaxAge
+	h.mu.Unlock()
+	if fresh {
+		return cached
+	}
 
+	stats := historyStats{Path: h.Path()}
 	var first, last sql.NullInt64
-	if err := h.db.QueryRow(`SELECT MIN(ts), MAX(ts) FROM samples`).Scan(&first, &last); err == nil {
-		if first.Valid {
-			stats.First = time.Unix(first.Int64, 0).UTC().Format(time.RFC3339)
-		}
-		if last.Valid {
-			stats.Last = time.Unix(last.Int64, 0).UTC().Format(time.RFC3339)
-		}
+	// One query, not two: COUNT, COUNT(DISTINCT), MIN and MAX in a single pass.
+	_ = h.db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT address), MIN(ts), MAX(ts) FROM samples`).
+		Scan(&stats.Samples, &stats.Batteries, &first, &last)
+	if first.Valid {
+		stats.First = time.Unix(first.Int64, 0).UTC().Format(time.RFC3339)
+	}
+	if last.Valid {
+		stats.Last = time.Unix(last.Int64, 0).UTC().Format(time.RFC3339)
 	}
 	if info, err := os.Stat(h.path); err == nil {
 		stats.Bytes = info.Size()
 	}
+
+	h.mu.Lock()
+	h.statsCache = stats
+	h.statsAt = time.Now()
+	h.statsDirty = false
+	h.mu.Unlock()
 	return stats
 }
 

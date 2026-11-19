@@ -38,8 +38,8 @@ public:
     // One device the scanner saw: the interface lists these, which is how the
     // "why does it not find my battery" question gets an answer.
     struct SeenDevice {
-        String address;
-        String name;
+        char address[18];
+        char name[32];
         int rssi = 0;
         bool battery = false;
     };

@@ -113,7 +113,10 @@ void AppConfig::load() {
     }
 }
 
-bool AppConfig::isKnownAddress(const String &address) const {
+bool AppConfig::isKnownAddress(const char *address) const {
+    if (address == nullptr || address[0] == '\0') {
+        return false;
+    }
     for (size_t index = 0; index < knownCount_; index++) {
         if (known_[index].address.equalsIgnoreCase(address)) {
             return true;

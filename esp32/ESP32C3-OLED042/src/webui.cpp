@@ -234,7 +234,7 @@ void WebUi::handleState() {
     hub["adverts"] = bms_->adverts();
     uint32_t named = 0;
     for (size_t index = 0; index < bms_->seenCount(); index++) {
-        if (bms_->seen(index).name.length() > 0) {
+        if (bms_->seen(index).name[0] != '\0') {
             named++;
         }
     }
@@ -373,6 +373,7 @@ void WebUi::handleState() {
     device["hostname"] = network.hostname;
     device["uptimeS"] = millis() / 1000;
     device["heap"] = ESP.getFreeHeap();
+    device["heapLargest"] = ESP.getMaxAllocHeap();
     device["wifiSsid"] = network.ssid;
     device["wifiRssi"] = network.rssi;
     device["accessPoint"] = network.accessPoint;

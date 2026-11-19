@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"tinygo.org/x/bluetooth"
@@ -67,18 +68,37 @@ var protocolProbes = []protocolProbe{
 // identifyDevice connects once and checks every known protocol family. The
 // GATT name is only read when the device did not advertise a name, because
 // every extra GATT round trip is a chance to get stuck.
-func identifyDevice(adapter *bluetooth.Adapter, address bluetooth.Address, knownName string) (identification, error) {
+//
+// control, when set, receives the disconnect function as soon as the link is
+// up, so a timed-out probe can close it instead of leaving the battery busy.
+// An empty service list is a failure, not a verdict: Windows often reports
+// success before the link is actually up, and treating that as "not a BMS"
+// made the same battery stay invisible on slower adapters.
+func identifyDevice(adapter *bluetooth.Adapter, address bluetooth.Address, knownName string, control *probeControl) (identification, error) {
 	device, err := adapter.Connect(address, bluetooth.ConnectionParams{
 		ConnectionTimeout: bluetooth.NewDuration(probeTimeout),
 	})
 	if err != nil {
 		return identification{}, err
 	}
-	defer device.Disconnect()
+	var once sync.Once
+	disconnect := func() {
+		once.Do(func() { _ = device.Disconnect() })
+	}
+	defer disconnect()
+	if control != nil {
+		control.attach(disconnect)
+		if control.wasAbandoned() {
+			return identification{}, fmt.Errorf("identification cancelled")
+		}
+	}
 
-	services, err := device.DiscoverServices(probeServiceUUIDs())
+	services, err := device.DiscoverServices(nil)
 	if err != nil {
 		return identification{}, err
+	}
+	if len(services) == 0 {
+		return identification{}, fmt.Errorf("the device answered without any services")
 	}
 
 	result := identification{Name: knownName}
@@ -106,14 +126,6 @@ func identifyDevice(adapter *bluetooth.Adapter, address bluetooth.Address, known
 		return result, nil
 	}
 	return result, nil
-}
-
-func probeServiceUUIDs() []bluetooth.UUID {
-	uuids := make([]bluetooth.UUID, 0, len(protocolProbes))
-	for _, probe := range protocolProbes {
-		uuids = append(uuids, probe.service)
-	}
-	return uuids
 }
 
 func findService(services []bluetooth.DeviceService, uuid bluetooth.UUID) (bluetooth.DeviceService, bool) {

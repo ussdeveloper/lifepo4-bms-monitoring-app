@@ -1336,7 +1336,7 @@ function renderCards() {
     const meta = card.querySelector(".card-meta");
     const status = card.querySelector(".card-status");
     if (online) {
-      meta.textContent = `RSSI ${battery.rssi} dBm`;
+      meta.textContent = rssiLabel(battery);
     } else {
       // A battery that is asleep or held by another device: the icon carries
       // the state, the tooltip spells it out.
@@ -1453,6 +1453,20 @@ function chooseDevice(address) {
   }).catch(() => {});
 }
 
+// lastCheckingHtml remembers what the device list currently shows. Rebuilding
+// it every second made the whole panel flicker and cost a full layout pass for
+// data that rarely changes; the rows are only replaced when they really differ.
+let lastCheckingHtml = "";
+let lastCheckingCaption = "";
+
+// rssiLabel renders a signal level, or a dash when Windows reports -127, which
+// means "unknown" and not an impossibly weak signal.
+function rssiLabel(device) {
+  const value = Number(device.rssi);
+  if (!Number.isFinite(value) || value <= -127 || value === 0) return "–";
+  return `RSSI ${value} dBm`;
+}
+
 function renderChecking() {
   const devices = state.hub.devices || [];
   const hub = state.hub || {};
@@ -1465,7 +1479,10 @@ function renderChecking() {
   });
   if (!devices.length) {
     el.checkingCaption.textContent = t("empty.noDevices");
-    el.checking.innerHTML = "";
+    if (lastCheckingHtml !== "") {
+      el.checking.innerHTML = "";
+      lastCheckingHtml = "";
+    }
     applyTab();
     return;
   }
@@ -1473,7 +1490,7 @@ function renderChecking() {
     .slice(0, 30)
     .map((device) => {
       const status = device.status === "known" ? "known" : device.status;
-      const meta = device.online ? `RSSI ${device.rssi} dBm` : t("state.offline");
+      const meta = device.online ? rssiLabel(device) : t("state.offline");
       return `<div class="device-row">
         <span class="device-name">${escapeHtml(displayLabel(device))}</span>
         <span class="chip small ${deviceStateClass(status)}">${escapeHtml(t(`state.${status}`))}</span>
@@ -1481,8 +1498,15 @@ function renderChecking() {
       </div>`;
     })
     .join("");
-  el.checkingCaption.textContent = t("empty.inRange", { n: devices.length });
-  el.checking.innerHTML = rows;
+  const caption = t("empty.inRange", { n: devices.length });
+  if (caption !== lastCheckingCaption) {
+    el.checkingCaption.textContent = caption;
+    lastCheckingCaption = caption;
+  }
+  if (rows !== lastCheckingHtml) {
+    el.checking.innerHTML = rows;
+    lastCheckingHtml = rows;
+  }
   applyTab();
 }
 
@@ -1622,6 +1646,11 @@ function refreshCellChart() {
 
 const POWER_WINDOW_MS = 10 * 60 * 1000;
 
+// The graph is rebuilt from the same series on every poll, which happens once a
+// second while readings arrive every few seconds. The key below is enough to
+// tell whether the line can look different at all.
+let lastSparkKey = "";
+
 // renderPower shows how much power is going in or out of the battery, with a
 // small graph of the last ten minutes.
 function renderPower(session, sample) {
@@ -1639,11 +1668,17 @@ function renderPower(session, sample) {
     ? `${charging ? "+" : "−"}${fixed(Math.abs(watts), 0)} W`
     : `${fixed(watts, 0)} W`;
 
-  const spark = buildSpark((session && session.power) || []);
-  el.powerLine.setAttribute("d", spark.line);
-  el.powerArea.setAttribute("d", spark.area);
-  el.powerDot.setAttribute("cx", spark.dot ? spark.dot[0].toFixed(2) : "-10");
-  el.powerDot.setAttribute("cy", spark.dot ? spark.dot[1].toFixed(2) : "-10");
+  const series = (session && session.power) || [];
+  const newest = series.length ? series[series.length - 1] : null;
+  const sparkKey = `${series.length}|${newest ? newest.t : 0}|${newest ? newest.w : 0}`;
+  if (sparkKey !== lastSparkKey) {
+    lastSparkKey = sparkKey;
+    const spark = buildSpark(series);
+    el.powerLine.setAttribute("d", spark.line);
+    el.powerArea.setAttribute("d", spark.area);
+    el.powerDot.setAttribute("cx", spark.dot ? spark.dot[0].toFixed(2) : "-10");
+    el.powerDot.setAttribute("cy", spark.dot ? spark.dot[1].toFixed(2) : "-10");
+  }
 
   // Estimated time until the battery is full (charging) or empty (discharging).
   const eta = Number(sample.etaS) || 0;
@@ -2021,7 +2056,12 @@ function renderChrome() {
   }
 }
 
+// The panel is not watched while the window is minimised or hidden: nothing
+// changes on screen, and a full re-render a second only costs battery and CPU.
 async function poll() {
+  if (document.hidden) {
+    return;
+  }
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -2057,3 +2097,8 @@ let pollTimer = null;
 applyStaticTranslations();
 poll();
 pollTimer = setInterval(poll, POLL_MS);
+
+// Coming back to the window refreshes at once instead of waiting for the tick.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) poll();
+});
