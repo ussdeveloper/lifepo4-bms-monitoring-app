@@ -206,6 +206,8 @@ const STRINGS = {
     "balance.imbalanced.bottom": "{spread} mV apart at the bottom of the charge — cell {cell} gives its energy first (limit ±{tolerance} mV)",
     "temp.sensor": "sensor {index}: {value} °C",
     "error.noDevice": "The battery is not in range — wake it up and try again.",
+    "error.notAdvertising": "The battery is not advertising.",
+    "error.notAdvertisingHint": "Windows can only connect to a device its Bluetooth stack has just seen, so nothing can reach the battery until it announces itself again. Most often the phone application is still connected to the BMS — close it there, then press the wake button on the battery. A battery inside a metal case also stops announcing through it.",
     "error.connect": "Could not connect to the battery.",
     "error.notify": "The BMS did not accept notifications.",
     "error.auth": "The BMS rejected the authentication.",
@@ -408,6 +410,8 @@ const STRINGS = {
     "balance.widened": "Okno to ±{total} mV zamiast ±{base} (o {extra} mV więcej przez: {why}).",
     "temp.sensor": "czujnik {index}: {value} °C",
     "error.noDevice": "Akumulator jest poza zasięgiem — wybudź go i spróbuj ponownie.",
+    "error.notAdvertising": "Akumulator się nie rozgłasza.",
+    "error.notAdvertisingHint": "Windows połączy się tylko z urządzeniem, które jego stos Bluetooth właśnie widzi, więc nic nie dotrze do akumulatora, dopóki nie zacznie się znów ogłaszać. Najczęściej aplikacja w telefonie jest wciąż połączona z BMS — zamknij ją, a potem naciśnij przycisk wybudzania na akumulatorze. Akumulator w metalowej obudowie także przestaje przez nią rozgłaszać.",
     "error.connect": "Nie udało się połączyć z akumulatorem.",
     "error.notify": "BMS nie przyjął powiadomień.",
     "error.auth": "BMS odrzucił uwierzytelnianie.",
@@ -1578,8 +1582,14 @@ function renderDetail() {
     el.errorDetail.textContent = "";
   } else if (session.status === "error" && session.error) {
     el.detailError.hidden = false;
-    el.errorHeadline.textContent = t(`error.${session.errorCode || "generic"}`);
-    el.errorDetail.textContent = session.error;
+    const code = session.errorCode || "generic";
+    el.errorHeadline.textContent = t(`error.${code}`);
+    // Some failures come with advice; the technical detail stays next to it so
+    // the message is useful and still diagnosable.
+    const hintKey = `error.${code}Hint`;
+    const table = STRINGS[language] || STRINGS.en;
+    const hint = table[hintKey] !== undefined ? table[hintKey] : STRINGS.en[hintKey];
+    el.errorDetail.textContent = hint ? `${hint}\n${session.error}` : session.error;
   } else {
     el.detailError.hidden = true;
   }

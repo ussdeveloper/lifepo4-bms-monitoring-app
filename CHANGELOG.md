@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+* **The battery is no longer refused when it is not in the scan.** The monitoring
+  session asked the scan results for the Bluetooth address and gave up with
+  "device is not part of the scan results" whenever the battery had not just
+  advertised. It now connects to the address the battery is remembered under, and
+  only a malformed address is a failure.
+* A connection that Windows rejects because it never saw the device is reported
+  as "The battery is not advertising" with what to do about it, instead of the
+  raw WinRT text. Measured on this machine: 30 s of scanning heard 13 devices
+  down to -83 dBm and the battery not once, so the panel now says so plainly.
+* Connect and identification timeouts raised from 5 s and 6 s to 10 s: at the
+  edge of the range a BMS answers the first request only once in several tries.
+* `devices.json` is bounded. Every phone and beacon with a new random address was
+  remembered for ever — the file had grown to 334 KB and 2254 entries and was
+  rewritten in full on every rejection. The "not a battery" list keeps the 300
+  newest; batteries and addresses added by hand are never dropped (the file is
+  46 KB now).
+
 ### Changed
 
 * `/api/state` is answered in 2 ms instead of 25 ms. Reading the state used to

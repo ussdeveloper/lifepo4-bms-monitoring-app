@@ -1203,7 +1203,7 @@ body.device .card-action { display: inline-flex; }
 }
 
 .error-headline { font-weight: 500; }
-.error-detail { font-size: 11.5px; color: rgba(125, 26, 26, 0.78); overflow-wrap: anywhere; }
+.error-detail { font-size: 11.5px; color: rgba(125, 26, 26, 0.78); overflow-wrap: anywhere; white-space: pre-line; }
 
 /* --- settings panel --- */
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,7 +58,10 @@ type Session struct {
 // Connection tuning: the battery answers in a few seconds when it is awake, so
 // a failed attempt is retried quickly instead of waiting for the next interval.
 const (
-	connectTimeout  = 5 * time.Second
+	// A connect at the edge of the range takes several attempts and a while
+	// each: a BMS heard at -86 dBm answers the first request maybe once in five
+	// tries, and giving up after five seconds means never reaching it.
+	connectTimeout  = 10 * time.Second
 	fastRetryDelay  = 2 * time.Second
 	slowRetryDelay  = 12 * time.Second
 	maxFastAttempts = 6
@@ -75,6 +79,7 @@ const (
 // technical detail from the BLE stack.
 const (
 	errCodeNoDevice          = "noDevice"
+	errCodeNotAdvertising    = "notAdvertising"
 	errCodeConnect           = "connect"
 	errCodeNotify            = "notify"
 	errCodeAuth              = "auth"
@@ -282,7 +287,19 @@ func (s *Session) run(ctx context.Context, address string) {
 			ConnectionTimeout: bluetooth.NewDuration(connectTimeout),
 		})
 		if err != nil {
-			s.fail(ctx, errCodeConnect, "connection failed: "+err.Error())
+			// Windows can only connect to a device its stack has just seen in a
+			// scan. "Not found" therefore means the battery is not advertising
+			// at all — asleep, or held by another application (the phone app
+			// does exactly that) — which is worth saying plainly instead of
+			// passing the raw WinRT text on to the user.
+			code := errCodeConnect
+			message := "connection failed: " + err.Error()
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				code = errCodeNotAdvertising
+				message = "the battery is not advertising: last seen " +
+					s.lastSeenLabel() + " · " + err.Error()
+			}
+			s.fail(ctx, code, message)
 			s.noteTakeover(everConnected, failures+1)
 			failures++
 			if !sleepCtx(ctx, s.retryDelay(attempt)) {
@@ -351,6 +368,26 @@ func (s *Session) setAttempt(attempt int) {
 	s.mu.Lock()
 	s.attempt = attempt
 	s.mu.Unlock()
+}
+
+// lastSeenLabel describes when the battery was last heard, for the message that
+// explains a battery which is not advertising.
+func (s *Session) lastSeenLabel() string {
+	info, found := s.hub.Device(s.address)
+	if !found || info.LastSeen.IsZero() {
+		return "never in this run"
+	}
+	minutes := int(time.Since(info.LastSeen).Minutes())
+	switch {
+	case minutes < 1:
+		return "less than a minute ago"
+	case minutes < 60:
+		return fmt.Sprintf("%d min ago", minutes)
+	case minutes < 48*60:
+		return fmt.Sprintf("%d h ago", minutes/60)
+	default:
+		return fmt.Sprintf("%d days ago", minutes/(24*60))
+	}
 }
 
 func (s *Session) markConnected() {

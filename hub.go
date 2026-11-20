@@ -45,7 +45,7 @@ const (
 	probeRetryDelay = 90 * time.Second
 
 	// One identification must never block the queue for longer than this.
-	probeDeadline = 12 * time.Second
+	probeDeadline = 20 * time.Second
 
 	// Generic devices wait at the head of the queue only while a battery could
 	// still show up.
@@ -1092,11 +1092,27 @@ func (h *Hub) ProbeBusy(address string) bool {
 	return busy
 }
 
+// AddressOf returns the Bluetooth address to connect to. A battery that was read
+// before is known by the address it was saved under, even when it is not
+// advertising at this moment: Windows connects to the address directly, so
+// waiting for an advertisement would make a battery that only announces itself
+// now and then impossible to reach — which is exactly what a weak link looks
+// like. Only a malformed address is a real failure here.
 func (h *Hub) AddressOf(address string) (bluetooth.Address, bool) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	value, ok := h.addresses[address]
-	return value, ok
+	h.mu.Unlock()
+	if ok {
+		return value, true
+	}
+	parsed, normalised, err := parseDeviceAddress(address)
+	if err != nil {
+		return bluetooth.Address{}, false
+	}
+	h.mu.Lock()
+	h.addresses[normalised] = parsed
+	h.mu.Unlock()
+	return parsed, true
 }
 
 // Touch marks a device as seen right now. The session calls it for every

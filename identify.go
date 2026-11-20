@@ -17,7 +17,10 @@ type identification struct {
 	Name     string
 }
 
-const probeTimeout = 6 * time.Second
+// A BMS at the edge of the range answers a connection request maybe once in a
+// few tries, and Windows needs a while for each: six seconds was short enough
+// that such a battery was never reached, however often it was retried.
+const probeTimeout = 10 * time.Second
 
 // JBD / Xiaoxiang devices (Overkill Solar and many budget LiFePO4 batteries)
 // expose a vendor service on FF00.

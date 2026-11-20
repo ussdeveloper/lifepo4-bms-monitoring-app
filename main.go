@@ -28,7 +28,7 @@ import (
 
 const (
 	appName    = "LiFePO4 BMS Monitor"
-	appVersion = "0.1.2"
+	appVersion = "0.1.3"
 	logName    = "lifepo4-bms-monitor.log"
 )
 
@@ -229,4 +229,5 @@ func openEdgeApp(url string) {
 	}
 	_ = exec.Command("cmd", "/c", "start", "", url).Start()
 }
+
 

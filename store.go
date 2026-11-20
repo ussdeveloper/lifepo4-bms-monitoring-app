@@ -522,7 +522,35 @@ func (s *Store) RecentPower(address string, since time.Time) []powerPoint {
 	return points
 }
 
+// maxNotBMS bounds the remembered "not a battery" list. Phones, watches and
+// beacons announce a new random address every few minutes, so an unbounded list
+// ends up with thousands of entries: devices.json grows to hundreds of
+// kilobytes and every rejection rewrites all of it. Batteries and addresses
+// added by hand are never dropped.
+const maxNotBMS = 300
+
+// pruneLocked drops the oldest "not a battery" entries once the list has grown
+// past maxNotBMS. The caller holds the lock.
+func (s *Store) pruneLocked() {
+	rejected := make([]string, 0, len(s.devices))
+	for key, device := range s.devices {
+		if device.Status == "notBMS" && !device.Manual {
+			rejected = append(rejected, key)
+		}
+	}
+	if len(rejected) <= maxNotBMS {
+		return
+	}
+	sort.Slice(rejected, func(i, j int) bool {
+		return s.devices[rejected[i]].SeenAt < s.devices[rejected[j]].SeenAt
+	})
+	for _, key := range rejected[:len(rejected)-maxNotBMS] {
+		delete(s.devices, key)
+	}
+}
+
 func (s *Store) flushLocked() {
+	s.pruneLocked()
 	file := storeFile{
 		Version: storeVersion,
 		Updated: time.Now().Format(time.RFC3339),
